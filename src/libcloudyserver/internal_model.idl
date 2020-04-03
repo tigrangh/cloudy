@@ -1,0 +1,25 @@
+module InternalModel
+{
+    class StorageOrder
+    {
+        String storage_address
+        String file_uri
+        String content_unit_uri
+        String session_id
+        UInt64 seconds
+        TimePoint time_point
+    }
+
+    class SignedStorageOrder
+    {
+        StorageOrder order
+        Authority authorization
+    }
+
+    class Authority
+    {
+        String address
+        String signature
+    }
+}
+////1

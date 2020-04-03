@@ -9,7 +9,7 @@ target_include_directories(cloudy INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>)
 
 # libraries this module links to
-target_link_libraries(belt.pp)
+target_link_libraries(cloudy INTERFACE belt.pp)
 
 # what to do on make install
 install(TARGETS cloudy
@@ -17,7 +17,11 @@ install(TARGETS cloudy
         DESTINATION ${CLOUDY_INSTALL_DESTINATION_LIBRARY})
 
 set(SRC_FILES
-    global.hpp)
+    global.hpp
+    admin_server.hpp
+    direct_stream.hpp
+    storage_server.hpp
+    worker.hpp)
 
 install(FILES
     ${SRC_FILES}

@@ -1,0 +1,55 @@
+module StorageModel
+{
+    class StorageFile
+    {
+        String mime_type
+        String data
+    }
+
+    class StorageFileDelete
+    {
+        String uri
+    }
+
+    class StorageFileAddress
+    {
+        String uri
+    }
+
+    class StorageFileRequest
+    {
+        String uri
+        String storage_order_token
+    }
+
+    class StorageFileDetails
+    {
+        String uri
+    }
+
+    class StorageFileDetailsResponse
+    {
+        String uri
+        String mime_type
+        UInt64 size
+    }
+
+    class FileUrisRequest {}
+
+    class FileUris
+    {
+        Array String file_uris
+    }
+
+    class Done {}
+
+    enum UriProblemType { missing duplicate invalid }
+    class UriError
+    {
+        String uri
+        UriProblemType uri_problem_type
+    }
+
+    class RemoteError { String message }
+}
+////1

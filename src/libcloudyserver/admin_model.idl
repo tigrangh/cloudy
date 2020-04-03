@@ -1,0 +1,10 @@
+module AdminModel
+{
+    class A {}
+
+    class RemoteError
+    {
+        String message
+    }
+}
+////1

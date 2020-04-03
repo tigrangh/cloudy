@@ -2,5 +2,8 @@ CMakeLists.txt.user
 /.vs
 /.vscode
 /build
+/src/libcloudyserver/admin_model.gen.hpp
+/src/libcloudyserver/storage_model.gen.hpp
+/src/libcloudyserver/internal_model.gen.hpp
 /CMakeSettings.json
 *.DS_Store

@@ -5,10 +5,10 @@ add_executable(cloudyd
 # libraries this module links to
 target_link_libraries(cloudyd PRIVATE
     cloudy
+    cloudyserver
     mesh.pp
     systemutility
     belt.pp
-    #utility
     cryptoutility
     log
     mlog
@@ -16,6 +16,11 @@ target_link_libraries(cloudyd PRIVATE
     Boost::program_options
     Boost::locale
     )
+
+if(NOT WIN32 AND NOT APPLE)
+    find_package(Threads REQUIRED)
+    target_link_libraries(cloudyd PRIVATE Threads::Threads)
+endif()
 
 # what to do on make install
 install(TARGETS cloudyd

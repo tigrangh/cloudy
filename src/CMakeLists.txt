@@ -35,6 +35,7 @@ find_package(mesh.pp)
 
 add_subdirectory(cloudy)
 add_subdirectory(cloudyd)
+add_subdirectory(libcloudyserver)
 
 # following is used for find_package functionality
 install(FILES cloudy-config.cmake DESTINATION ${CLOUDY_INSTALL_DESTINATION_LIBRARY})
