@@ -2,80 +2,12 @@
 
 #include "common.hpp"
 
-#include <unordered_set>
-
 namespace cloudy
 {
 using beltpp::stream;
 using beltpp::packet;
 using beltpp::queue;
 using beltpp::event_handler;
-
-/*class direct_stream_event_handler : public event_handler
-{
-public:
-    using wait_result = beltpp::event_handler::wait_result;
-
-    direct_stream_event_handler() {}
-    virtual ~direct_stream_event_handler() {}
-
-    wait_result wait(std::unordered_set<beltpp::event_item const*>&) override
-    {
-        return nothing;
-    }
-    std::unordered_set<uint64_t> waited(beltpp::event_item&) const override
-    {
-        return std::unordered_set<uint64_t>();
-    }
-
-    void wake() override {};
-    void set_timer(std::chrono::steady_clock::duration const&) override {};
-
-    virtual void add(beltpp::event_item&) override {};
-    virtual void remove(beltpp::event_item&) override {};
-};*/
-
-struct streams
-{
-    queue<packet>* incoming = nullptr;
-    queue<packet>* outgoing = nullptr;
-};
-
-inline streams init(direct_channel& channel,
-                    event_handler& eh)
-{
-    if (channel.taker == direct_channel::participant::none)
-        throw std::logic_error("channel.taker == direct_channel::participant::none");
-
-    streams result;
-
-    if (channel.taker == direct_channel::participant::one)
-    {
-        result.incoming = &channel.one;
-        result.outgoing = &channel.two;
-
-        channel.eh_one = &eh;
-    }
-    else
-    {
-        result.incoming = &channel.two;
-        result.outgoing = &channel.one;
-
-        channel.eh_two = &eh;
-    }
-
-    switch (channel.taker)
-    {
-    case direct_channel::participant::one:
-        channel.taker = direct_channel::participant::two;
-        break;
-    default:
-        channel.taker = direct_channel::participant::none;
-        break;
-    }
-
-    return result;
-}
 
 class direct_stream : public stream
 {
@@ -85,17 +17,69 @@ public:
 
     event_handler* eh;
     direct_channel* channel;
-    streams streams_incoming_outgoing;
+    peer_id peerid;
 
-    direct_stream(event_handler& _eh,
+    direct_stream(peer_id const& _peerid,
+                  event_handler& _eh,
                   direct_channel& _channel)
         : stream(_eh)
-        , eh(&_eh)
         , channel(&_channel)
-        , streams_incoming_outgoing(init(_channel, _eh))
+        , peerid(_peerid)
     {
+        std::lock_guard<std::mutex> lock(channel->mutex);
+        auto insert_res =
+                channel->streams.insert(std::make_pair(peerid, direct_channel::peer_eh_incoming_streams()));
+
+        if (false == insert_res.second)
+            throw std::logic_error("direct_stream: false == insert_res.second");
+        auto& new_item = *insert_res.first;
+        new_item.second.first = &_eh;
+
+        for (auto& existing_item : channel->streams)
+        {
+            if (existing_item.first == peerid)
+                continue;   //  this is self
+
+            auto insert_res_existing = existing_item.second.second.insert(
+                                            std::make_pair(peerid,
+                                                           beltpp::queue<beltpp::packet>()));
+
+            if (false == insert_res_existing.second)
+                throw std::logic_error("direct_stream: false == insert_res_existing.second");
+            insert_res_existing.first->second.push(beltpp::packet(beltpp::stream_join()));
+
+            auto insert_res_new = new_item.second.second.insert(
+                                      std::make_pair(existing_item.first,
+                                                     beltpp::queue<beltpp::packet>()));
+
+            if (false == insert_res_new.second)
+                throw std::logic_error("direct_stream: false == insert_res_new.second");
+            insert_res_new.first->second.push(beltpp::packet(beltpp::stream_join()));
+
+            existing_item.second.first->wake();
+            new_item.second.first->wake();
+        }
     }
-    virtual ~direct_stream() {}
+    virtual ~direct_stream()
+    {
+        std::lock_guard<std::mutex> lock(channel->mutex);
+        auto it = channel->streams.begin();
+        while (it != channel->streams.end())
+        {
+            auto& existing_item = *it;
+
+            if (existing_item.first == peerid)
+            {
+                it = channel->streams.erase(it);    //  this is self
+                continue;
+            }
+
+            existing_item.second.second[peerid].push(beltpp::packet(beltpp::stream_drop()));
+            existing_item.second.first->wake();
+
+            ++it;
+        }
+    }
 
     void prepare_wait() override {};
     void timer_action() override {};
@@ -106,10 +90,17 @@ public:
 
         packets result;
 
-        while (false == streams_incoming_outgoing.incoming->empty())
+        auto it = channel->streams[peerid].second.begin();
+        if (it != channel->streams[peerid].second.end())
         {
-            result.push_back(std::move(streams_incoming_outgoing.incoming->front()));
-            streams_incoming_outgoing.incoming->pop();
+            peer = it->first;
+            while (false == it->second.empty())
+            {
+                result.push_back(std::move(it->second.front()));
+                it->second.pop();
+            }
+
+            it = channel->streams[peerid].second.erase(it);
         }
 
         return result;
@@ -120,16 +111,22 @@ public:
     {
         std::lock_guard<std::mutex> lock(channel->mutex);
 
-        streams_incoming_outgoing.outgoing->push(std::move(package));
+        if (peer == peerid)
+            throw std::runtime_error("direct_stream::send: peer == peerid");
 
-        (channel->eh_one == eh ? channel->eh_two : channel->eh_one)->wake();
+        auto it = channel->streams.find(peer);
+        if (it == channel->streams.end())
+            throw std::runtime_error("direct_stream::send: it = channel->streams.end()");
+        it->second.second[peerid].push(std::move(package));
+        it->second.first->wake();
     }
 };
 
-stream_ptr construct_direct_stream(beltpp::event_handler& eh,
+stream_ptr construct_direct_stream(beltpp::stream::peer_id const& peerid,
+                                   beltpp::event_handler& eh,
                                    direct_channel& channel)
 {
-    beltpp::stream* p = new direct_stream(eh, channel);
+    beltpp::stream* p = new direct_stream(peerid, eh, channel);
     return stream_ptr(p);
 }
 }

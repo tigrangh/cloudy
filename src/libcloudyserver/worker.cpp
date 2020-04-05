@@ -43,25 +43,33 @@ packet processor_worker(packet&& package)
     return packet();
 }
 
+stream_ptr construct_processor(beltpp::event_handler& eh,
+                               size_t count,
+                               beltpp::libprocessor::fpworker const& worker)
+{
+    auto result = beltpp::libprocessor::construct_processor(eh, 2, &processor_worker);
+    eh.add(*result);
+
+    return result;
+}
+
 class worker_internals
 {
 public:
     beltpp::ilog* plogger;
     event_handler_ptr ptr_eh;
     stream_ptr ptr_stream;
-    stream_ptr ptr_stream_admin;
+    stream_ptr ptr_direct_stream;
     wait_result wait_result_info;
 
     worker_internals(beltpp::ilog* _plogger,
                      direct_channel& channel)
         : plogger(_plogger)
         , ptr_eh(beltpp::libprocessor::construct_event_handler())
-        , ptr_stream(beltpp::libprocessor::construct_processor(*ptr_eh, 2, &processor_worker))
-        , ptr_stream_admin(cloudy::construct_direct_stream(*ptr_eh, channel))
+        , ptr_stream(construct_processor(*ptr_eh, 2, &processor_worker))
+        , ptr_direct_stream(cloudy::construct_direct_stream(worker_peerid, *ptr_eh, channel))
     {
         //ptr_eh->set_timer(event_timer_period);
-
-        ptr_eh->add(*ptr_stream);
     }
 
     void writeln_node(string const& value)
@@ -103,7 +111,7 @@ void worker::run(bool& stop)
     auto wait_result = detail::wait_and_receive_one(m_pimpl->wait_result_info,
                                                     *m_pimpl->ptr_eh,
                                                     *m_pimpl->ptr_stream,
-                                                    m_pimpl->ptr_stream_admin.get());
+                                                    m_pimpl->ptr_direct_stream.get());
 
     if (wait_result.et == detail::wait_result_item::event)
     {
@@ -127,7 +135,7 @@ void worker::run(bool& stop)
             }
             }   // switch ref_packet.type()
 
-            m_pimpl->ptr_stream_admin->send("", packet());
+            m_pimpl->ptr_direct_stream->send(admin_peerid, packet());
         }
         catch (std::exception const& e)
         {
@@ -148,12 +156,12 @@ void worker::run(bool& stop)
     {
         m_pimpl->ptr_stream->timer_action();
     }
-    else if (m_pimpl->ptr_stream_admin && wait_result.et == detail::wait_result_item::on_demand)
+    else if (m_pimpl->ptr_direct_stream && wait_result.et == detail::wait_result_item::on_demand)
     {
+        auto peerid = wait_result.peerid;
         auto received_packet = std::move(wait_result.packet);
 
-        auto& stream = *m_pimpl->ptr_stream_admin;
-        peer_id peerid;
+        auto& stream = *m_pimpl->ptr_direct_stream;
 
         B_UNUSED(stream);
 
@@ -161,9 +169,19 @@ void worker::run(bool& stop)
         {
             m_pimpl->ptr_stream->send("", std::move(received_packet));
             m_pimpl->writeln_node("got message from admin");
-//            switch (received_packet.type())
-//            {
-//            }
+            switch (received_packet.type())
+            {
+            case beltpp::stream_join::rtt:
+            {
+                m_pimpl->writeln_node("worker: joined: " + peerid);
+                break;
+            }
+            case beltpp::stream_drop::rtt:
+            {
+                m_pimpl->writeln_node("worker: dropped: " + peerid);
+                break;
+            }
+            }
         }
         catch (std::exception const& e)
         {

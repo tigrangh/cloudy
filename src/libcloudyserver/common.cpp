@@ -86,9 +86,9 @@ wait_result_item wait_and_receive_one(wait_result& wait_result_info,
 
     if (info == beltpp::event_handler::wait_result::nothing)
     {
-        assert(wait_result_info.on_demand_packets.empty());
-        if (false == wait_result_info.on_demand_packets.empty())
-            throw std::logic_error("false == wait_result_info.on_demand_packets.empty()");
+        assert(wait_result_info.on_demand_packets.second.empty());
+        if (false == wait_result_info.on_demand_packets.second.empty())
+            throw std::logic_error("false == wait_result_info.on_demand_packets.second.empty()");
         assert(wait_result_info.event_packets.second.empty());
         if (false == wait_result_info.event_packets.second.empty())
             throw std::logic_error("false == wait_result_info.event_packets.second.empty()");
@@ -118,8 +118,12 @@ wait_result_item wait_and_receive_one(wait_result& wait_result_info,
 
         if (on_demand_stream && (info & beltpp::event_handler::on_demand))
         {
+            beltpp::socket::packets received_packets;
             beltpp::socket::peer_id peerid;
-            wait_result_info.on_demand_packets = on_demand_stream->receive(peerid);
+            received_packets = on_demand_stream->receive(peerid);
+
+            wait_result_info.on_demand_packets = std::make_pair(peerid,
+                                                                std::move(received_packets));
         }
     }
 
@@ -152,15 +156,17 @@ wait_result_item wait_and_receive_one(wait_result& wait_result_info,
 
     if (info & beltpp::event_handler::on_demand)
     {
-        if (false == wait_result_info.on_demand_packets.empty())
+        if (false == wait_result_info.on_demand_packets.second.empty())
         {
-            auto packet = std::move(wait_result_info.on_demand_packets.front());
-            wait_result_info.on_demand_packets.pop_front();
+            auto packet = std::move(wait_result_info.on_demand_packets.second.front());
+            auto peerid = wait_result_info.on_demand_packets.first;
 
-            result = wait_result_item::on_demand_result(std::move(packet));
+            wait_result_info.on_demand_packets.second.pop_front();
+
+            result = wait_result_item::on_demand_result(peerid, std::move(packet));
         }
 
-        if (wait_result_info.on_demand_packets.empty())
+        if (wait_result_info.on_demand_packets.second.empty())
             info = beltpp::event_handler::wait_result(info & ~beltpp::event_handler::on_demand);
 
         return result;

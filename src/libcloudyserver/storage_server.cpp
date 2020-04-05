@@ -52,7 +52,7 @@ public:
     unique_ptr<beltpp::event_handler> ptr_eh;
     unique_ptr<beltpp::socket> ptr_socket;
 
-    stream_ptr ptr_stream_admin;
+    stream_ptr ptr_direct_stream;
 
     cloudy::storage m_storage;
 
@@ -67,7 +67,7 @@ public:
         : plogger(_plogger)
         , ptr_eh(beltpp::libsocket::construct_event_handler())
         , ptr_socket(beltpp::libsocket::getsocket<rpc_storage_sf>(*ptr_eh))
-        , ptr_stream_admin(cloudy::construct_direct_stream(*ptr_eh, channel))
+        , ptr_direct_stream(cloudy::construct_direct_stream(storage_peerid, *ptr_eh, channel))
         , m_storage(fs_storage)
         , pb_key(_pb_key)
     {
@@ -126,7 +126,7 @@ void storage_server::run(bool& stop)
     auto wait_result = detail::wait_and_receive_one(m_pimpl->wait_result_info,
                                                     *m_pimpl->ptr_eh,
                                                     *m_pimpl->ptr_socket,
-                                                    m_pimpl->ptr_stream_admin.get());
+                                                    m_pimpl->ptr_direct_stream.get());
 
     if (wait_result.et == detail::wait_result_item::event)
     {
@@ -261,17 +261,27 @@ void storage_server::run(bool& stop)
     {
         m_pimpl->ptr_socket->timer_action();
     }
-    else if (m_pimpl->ptr_stream_admin && wait_result.et == detail::wait_result_item::on_demand)
+    else if (m_pimpl->ptr_direct_stream && wait_result.et == detail::wait_result_item::on_demand)
     {
+        auto peerid = wait_result.peerid;
         auto received_packet = std::move(wait_result.packet);
 
-        auto& stream = *m_pimpl->ptr_stream_admin;
-        peer_id peerid;
+        auto& stream = *m_pimpl->ptr_direct_stream;
 
         try
         {
             switch (received_packet.type())
             {
+            case beltpp::stream_join::rtt:
+            {
+                m_pimpl->writeln_node("storage: joined: " + peerid);
+                break;
+            }
+            case beltpp::stream_drop::rtt:
+            {
+                m_pimpl->writeln_node("storage: dropped: " + peerid);
+                break;
+            }
             case StorageFile::rtt:
             {
                 StorageFile storage_file;

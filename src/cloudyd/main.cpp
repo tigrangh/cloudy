@@ -148,14 +148,13 @@ int main(int argc, char** argv)
         plogger_worker_exceptions = meshpp::file_logger("worker_exceptions",
                                                          fs_log / "worker_exceptions.txt");
 
-        cloudy::direct_channel admin_storage_channel;
-        cloudy::direct_channel admin_worker_channel;
+        cloudy::direct_channel direct_channel;
 
         cloudy::admin_server admin(admin_bind_to_address,
                                    fs_storage,
                                    pv_key,
                                    plogger_admin.get(),
-                                   admin_worker_channel);
+                                   direct_channel);
 
         g_admin = &admin;
 
@@ -163,11 +162,11 @@ int main(int argc, char** argv)
                                        fs_storage,
                                        pv_key.get_public_key(),
                                        plogger_storage.get(),
-                                       admin_storage_channel);
+                                       direct_channel);
         g_storage = &storage;
 
         cloudy::worker worker(plogger_worker.get(),
-                              admin_worker_channel);
+                              direct_channel);
         g_worker = &worker;
 
         {

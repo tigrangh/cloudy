@@ -42,7 +42,7 @@ public:
     event_handler_ptr ptr_eh;
     socket_ptr ptr_socket;
 
-    stream_ptr ptr_stream_storage;
+    stream_ptr ptr_direct_stream;
 
     cloudy::storage storage;
 
@@ -57,7 +57,7 @@ public:
         : plogger(_plogger)
         , ptr_eh(beltpp::libsocket::construct_event_handler())
         , ptr_socket(beltpp::libsocket::getsocket<rpc_sf>(*ptr_eh))
-        , ptr_stream_storage(cloudy::construct_direct_stream(*ptr_eh, channel))
+        , ptr_direct_stream(cloudy::construct_direct_stream(admin_peerid, *ptr_eh, channel))
         , storage(fs_storage)
         , pv_key(_pv_key)
     {
@@ -130,7 +130,7 @@ void admin_server::run(bool& stop_check)
     auto wait_result = detail::wait_and_receive_one(m_pimpl->wait_result_info,
                                                     *m_pimpl->ptr_eh,
                                                     *m_pimpl->ptr_socket,
-                                                    m_pimpl->ptr_stream_storage.get());
+                                                    m_pimpl->ptr_direct_stream.get());
 
     if (wait_result.et == detail::wait_result_item::event)
     {
@@ -149,7 +149,7 @@ void admin_server::run(bool& stop_check)
                 {
                 case beltpp::stream_join::rtt:
                 {
-                    m_pimpl->ptr_stream_storage->send("asd", packet());
+                    m_pimpl->ptr_direct_stream->send(worker_peerid, packet());
                     m_pimpl->writeln_node("admin: joined: " + peerid);
                     break;
                 }
@@ -210,10 +210,24 @@ void admin_server::run(bool& stop_check)
     {
         m_pimpl->ptr_socket->timer_action();
     }
-    else if (m_pimpl->ptr_stream_storage && wait_result.et == detail::wait_result_item::on_demand)
+    else if (m_pimpl->ptr_direct_stream && wait_result.et == detail::wait_result_item::on_demand)
     {
+        auto peerid = wait_result.peerid;
         auto received_packet = std::move(wait_result.packet);
 
+        switch (received_packet.type())
+        {
+        case beltpp::stream_join::rtt:
+        {
+            m_pimpl->writeln_node("worker: joined: " + peerid);
+            break;
+        }
+        case beltpp::stream_drop::rtt:
+        {
+            m_pimpl->writeln_node("worker: dropped: " + peerid);
+            break;
+        }
+        }
         /*if (false == m_pimpl->m_sessions.process("slave", std::move(ref_packet)))
         {
             switch (received_packet.type())
