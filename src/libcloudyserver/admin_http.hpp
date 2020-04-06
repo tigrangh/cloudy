@@ -23,11 +23,31 @@ namespace cloudy
 {
 namespace http
 {
+using namespace AdminModel;
+
 inline
 string response(beltpp::detail::session_special_data& ssd,
                 beltpp::packet const& pc)
 {
     return beltpp::http::http_response(ssd, pc.to_string());
+}
+inline
+string response_tree(beltpp::detail::session_special_data& ssd,
+                     beltpp::packet const& pc)
+{
+    if (pc.type() == CatalogueTreeResponse::rtt)
+        return beltpp::http::http_response(ssd, pc.to_string());
+    else
+        return beltpp::http::http_internal_server_error(ssd, pc.to_string());
+}
+inline
+string response_log(beltpp::detail::session_special_data& ssd,
+                    beltpp::packet const& pc)
+{
+    if (pc.type() == Log::rtt)
+        return beltpp::http::http_response(ssd, pc.to_string());
+    else
+        return beltpp::http::http_internal_server_error(ssd, pc.to_string());
 }
 
 template <beltpp::detail::pmsg_all (*fallback_message_list_load)(
@@ -105,6 +125,58 @@ beltpp::detail::pmsg_all message_list_load(
                 return pmsgall;
 
             return protocol_error();
+        }
+        else if (ss.type == beltpp::http::detail::scan_status::get &&
+                 false == ss.resource.path.empty() &&
+                 ss.resource.path.front() == "tree")
+        {
+            ssd.session_specal_handler = &response_tree;
+            auto p = ::beltpp::new_void_unique_ptr<CatalogueTreeGet>();
+            CatalogueTreeGet& ref = *reinterpret_cast<CatalogueTreeGet*>(p.get());
+            for (size_t index = 1; index != ss.resource.path.size(); ++index)
+                ref.path.push_back(ss.resource.path[index]);
+
+            return ::beltpp::detail::pmsg_all(CatalogueTreeGet::rtt,
+                                              std::move(p),
+                                              &CatalogueTreeGet::pvoid_saver);
+        }
+        else if (ss.type == beltpp::http::detail::scan_status::put &&
+                 false == ss.resource.path.empty() &&
+                 ss.resource.path.front() == "tree")
+        {
+            ssd.session_specal_handler = &response_tree;
+            auto p = ::beltpp::new_void_unique_ptr<CatalogueTreePut>();
+            CatalogueTreePut& ref = *reinterpret_cast<CatalogueTreePut*>(p.get());
+            for (size_t index = 1; index != ss.resource.path.size(); ++index)
+                ref.path.push_back(ss.resource.path[index]);
+
+            return ::beltpp::detail::pmsg_all(CatalogueTreePut::rtt,
+                                              std::move(p),
+                                              &CatalogueTreePut::pvoid_saver);
+        }
+        else if (ss.type == beltpp::http::detail::scan_status::get &&
+                 ss.resource.path.size() == 1 &&
+                 ss.resource.path.front() == "log")
+        {
+            ssd.session_specal_handler = &response_log;
+            auto p = ::beltpp::new_void_unique_ptr<LogGet>();
+            //LogGet& ref = *reinterpret_cast<LogGet*>(p.get());
+
+            return ::beltpp::detail::pmsg_all(LogGet::rtt,
+                                              std::move(p),
+                                              &LogGet::pvoid_saver);
+        }
+        else if (ss.type == beltpp::http::detail::scan_status::del &&
+                 ss.resource.path.size() == 1 &&
+                 ss.resource.path.front() == "log")
+        {
+            ssd.session_specal_handler = &response_log;
+            auto p = ::beltpp::new_void_unique_ptr<LogDelete>();
+            //LogDelete& ref = *reinterpret_cast<LogDelete*>(p.get());
+
+            return ::beltpp::detail::pmsg_all(LogDelete::rtt,
+                                              std::move(p),
+                                              &LogDelete::pvoid_saver);
         }
         else if (ss.type == beltpp::http::detail::scan_status::get &&
                  ss.resource.path.size() == 1 &&

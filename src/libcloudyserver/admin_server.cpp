@@ -2,13 +2,19 @@
 
 #include "common.hpp"
 #include "admin_http.hpp"
-#include "storage.hpp"
+#include "admin_model.hpp"
+#include "internal_model.hpp"
+#include "catalogue_tree.hpp"
 
 #include <belt.pp/socket.hpp>
 #include <belt.pp/packet.hpp>
 #include <belt.pp/timer.hpp>
+#include <belt.pp/scope_helper.hpp>
 
 #include <mesh.pp/cryptoutility.hpp>
+#include <mesh.pp/fileutility.hpp>
+
+#include <boost/filesystem.hpp>
 
 #include <memory>
 #include <chrono>
@@ -44,13 +50,17 @@ public:
 
     stream_ptr ptr_direct_stream;
 
-    cloudy::storage storage;
+    cloudy::catalogue_tree catalogue_tree;
+    meshpp::file_loader<AdminModel::Log,
+                        &AdminModel::Log::from_string,
+                        &AdminModel::Log::to_string> log;
 
     meshpp::private_key pv_key;
     wait_result wait_result_info;
 
     admin_server_internals(ip_address const& bind_to_address,
-                           filesystem::path const& fs_storage,
+                           filesystem::path const& fs_catalogue_tree,
+                           filesystem::path const& fs_admin,
                            meshpp::private_key const& _pv_key,
                            ilog* _plogger,
                            direct_channel& channel)
@@ -58,7 +68,8 @@ public:
         , ptr_eh(beltpp::libsocket::construct_event_handler())
         , ptr_socket(beltpp::libsocket::getsocket<rpc_sf>(*ptr_eh))
         , ptr_direct_stream(cloudy::construct_direct_stream(admin_peerid, *ptr_eh, channel))
-        , storage(fs_storage)
+        , catalogue_tree(fs_catalogue_tree)
+        , log(fs_admin / "log.json")
         , pv_key(_pv_key)
     {
         ptr_eh->set_timer(event_timer_period);
@@ -85,17 +96,26 @@ public:
 
     void save()
     {
-        //m_storage.save();
+        catalogue_tree.save();
+        log.save();
     }
 
-    void commit()
+    void commit() noexcept
     {
-        //m_storage.commit();
+        catalogue_tree.save();
+        log.save();
     }
 
-    void discard()
+    void discard() noexcept
     {
-        //m_storage.discard();
+        catalogue_tree.save();
+        log.save();
+    }
+
+    void clear()
+    {
+        catalogue_tree.clear();
+        log->log.clear();
     }
 };
 }
@@ -103,12 +123,14 @@ public:
 using namespace AdminModel;
 
 admin_server::admin_server(ip_address const& bind_to_address,
-                           filesystem::path const& fs_storage,
+                           filesystem::path const& fs_catalogue_tree,
+                           filesystem::path const& fs_admin,
                            meshpp::private_key const& pv_key,
                            ilog* plogger,
                            direct_channel& channel)
     : m_pimpl(new detail::admin_server_internals(bind_to_address,
-                                                 fs_storage,
+                                                 fs_catalogue_tree,
+                                                 fs_admin,
                                                  pv_key,
                                                  plogger,
                                                  channel))
@@ -126,6 +148,17 @@ void admin_server::wake()
 void admin_server::run(bool& stop_check)
 {
     stop_check = false;
+
+
+    {
+        auto paths = m_pimpl->catalogue_tree.process_index();
+        for (auto&& path : paths)
+        {
+            ProcessIndexRequest request;
+            request.path = std::move(path);
+            m_pimpl->ptr_direct_stream->send(worker_peerid, packet(request));
+        }
+    }
 
     auto wait_result = detail::wait_and_receive_one(m_pimpl->wait_result_info,
                                                     *m_pimpl->ptr_eh,
@@ -145,11 +178,12 @@ void admin_server::run(bool& stop_check)
                 false == m_pimpl->m_sync_sessions.process(peerid, std::move(received_packet))*/
                 true)
             {
+                beltpp::on_failure guard([this]{ m_pimpl->discard(); });
+
                 switch (received_packet.type())
                 {
                 case beltpp::stream_join::rtt:
                 {
-                    m_pimpl->ptr_direct_stream->send(worker_peerid, packet());
                     m_pimpl->writeln_node("admin: joined: " + peerid);
                     break;
                 }
@@ -181,6 +215,48 @@ void admin_server::run(bool& stop_check)
                     m_pimpl->writeln_node_warning(msg.reason + ", " + peerid);
                     break;
                 }
+                case CatalogueTreeGet::rtt:
+                {
+                    CatalogueTreeGet request;
+                    std::move(received_packet).get(request);
+
+                    stream.send(peerid, packet(m_pimpl->catalogue_tree.list(request.path)));
+                    break;
+                }
+                case CatalogueTreePut::rtt:
+                {
+                    CatalogueTreePut request;
+                    CatalogueTreeResponse response;
+
+                    std::move(received_packet).get(request);
+
+                    if (false == request.path.empty())
+                    {
+                        ProcessIndexRequest process_index_request;
+                        process_index_request.path = request.path;
+
+                        m_pimpl->catalogue_tree.index(std::move(process_index_request.path));
+
+                        request.path.pop_back();
+                    }
+                    stream.send(peerid, packet(m_pimpl->catalogue_tree.list(request.path)));
+
+                    stream.send(peerid, packet(response));
+                    break;
+                }
+                case LogGet::rtt:
+                {
+                    stream.send(peerid, packet(*m_pimpl->log));
+
+                    break;
+                }
+                case LogDelete::rtt:
+                {
+                    m_pimpl->log->log.clear();
+                    stream.send(peerid, packet(*m_pimpl->log));
+
+                    break;
+                }
                 default:
                 {
                     m_pimpl->writeln_node("peer: " + peerid);
@@ -189,6 +265,10 @@ void admin_server::run(bool& stop_check)
                     break;
                 }
                 }   // switch received_packet.type()
+
+                m_pimpl->save();
+                guard.dismiss();
+                m_pimpl->commit();
             }   // if not processed by sessions
         }
         catch (std::exception const& e)
@@ -215,19 +295,48 @@ void admin_server::run(bool& stop_check)
         auto peerid = wait_result.peerid;
         auto received_packet = std::move(wait_result.packet);
 
+        beltpp::on_failure guard([this]{ m_pimpl->discard(); });
+
+        if (peerid == worker_peerid)
         switch (received_packet.type())
         {
         case beltpp::stream_join::rtt:
         {
-            m_pimpl->writeln_node("worker: joined: " + peerid);
+            m_pimpl->writeln_node("admin: joined: " + peerid);
             break;
         }
         case beltpp::stream_drop::rtt:
         {
-            m_pimpl->writeln_node("worker: dropped: " + peerid);
+            m_pimpl->writeln_node("admin: dropped: " + peerid);
+            break;
+        }
+        case ProcessIndexResult::rtt:
+        {
+            ProcessIndexResult request;
+            received_packet.get(request);
+
+            m_pimpl->catalogue_tree.process_index_done(request.path);
+            m_pimpl->catalogue_tree.add(std::move(request.path), request.sha256sum);
+
+            m_pimpl->log->log.push_back(std::move(received_packet));
+
+            break;
+        }
+        case ProcessIndexProblem::rtt:
+        {
+            ProcessIndexProblem request;
+            received_packet.get(request);
+
+            m_pimpl->catalogue_tree.process_index_done(request.path);
+
+            m_pimpl->log->log.push_back(std::move(received_packet));
             break;
         }
         }
+
+        m_pimpl->save();
+        guard.dismiss();
+        m_pimpl->commit();
         /*if (false == m_pimpl->m_sessions.process("slave", std::move(ref_packet)))
         {
             switch (received_packet.type())
@@ -241,4 +350,5 @@ void admin_server::run(bool& stop_check)
 //    m_pimpl->m_sync_sessions.erase_all_pending();
 //    m_pimpl->m_nodeid_sessions.erase_all_pending();
 }
+
 }

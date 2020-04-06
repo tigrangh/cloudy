@@ -34,6 +34,17 @@ beltpp::void_unique_ptr get_storage_putl()
 
     return ptr_utl;
 }
+
+beltpp::void_unique_ptr get_internal_putl()
+{
+    beltpp::message_loader_utility utl;
+    InternalModel::detail::extension_helper(utl);
+
+    auto ptr_utl =
+        beltpp::new_void_unique_ptr<beltpp::message_loader_utility>(std::move(utl));
+
+    return ptr_utl;
+}
 bool verify_storage_order(string const& storage_order_token,
                           string& channel_address,
                           string& file_uri,

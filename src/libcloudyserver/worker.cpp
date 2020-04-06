@@ -2,9 +2,15 @@
 
 #include "common.hpp"
 #include "internal_model.hpp"
+#include "admin_model.hpp"
 
 #include <belt.pp/packet.hpp>
 #include <belt.pp/processor.hpp>
+
+#include <mesh.pp/fileutility.hpp>
+#include <mesh.pp/cryptoutility.hpp>
+
+#include <boost/filesystem.hpp>
 
 #include <string>
 #include <memory>
@@ -15,7 +21,6 @@
 #include <exception>
 #include <mutex>
 #include <thread>
-#include <iostream>
 
 using namespace InternalModel;
 
@@ -28,19 +33,70 @@ using chrono::system_clock;
 using std::string;
 using std::unordered_set;
 using std::unique_ptr;
+using std::vector;
+
+namespace filesystem = boost::filesystem;
 
 namespace cloudy
 {
 
 namespace detail
 {
+filesystem::path check_path(vector<string> const& path)
+{
+    filesystem::path fs_path("/");
+    for (auto const& name : path)
+    {
+        if (name == "." || name == "..")
+            throw std::runtime_error("self or parent directories are not supported");
+        fs_path /= name;
+    }
+
+    return fs_path;
+}
 
 packet processor_worker(packet&& package)
 {
-    std::cout << "processing ...\n\n";
     std::this_thread::sleep_for(std::chrono::seconds(10));
-    std::cout << "...processed\n\n";
-    return packet();
+
+    packet result;
+
+    switch(package.type())
+    {
+    case AdminModel::ProcessIndexRequest::rtt:
+    {
+        AdminModel::ProcessIndexRequest request;
+        std::move(package).get(request);
+
+        try
+        {
+            std::istreambuf_iterator<char> end, begin;
+            boost::filesystem::ifstream fl;
+            boost::filesystem::path path(check_path(request.path));
+
+            meshpp::load_file(path, fl, begin, end);
+            if (begin == end)
+                throw std::runtime_error("no such file");
+
+            AdminModel::ProcessIndexResult response;
+            response.path = request.path;
+            response.sha256sum = meshpp::hash(begin, end);
+
+            result.set(std::move(response));
+        }
+        catch (std::exception const& ex)
+        {
+            AdminModel::ProcessIndexProblem response;
+            response.path = request.path;
+            response.reason = ex.what();
+
+            result.set(std::move(response));
+        }
+        break;
+    }
+    }
+
+    return packet(std::move(result));
 }
 
 stream_ptr construct_processor(beltpp::event_handler& eh,
@@ -123,19 +179,7 @@ void worker::run(bool& stop)
 
         try
         {
-            switch (received_packet.type())
-            {
-            default:
-            {
-                m_pimpl->writeln_node("peer: " + peerid);
-                m_pimpl->writeln_node("worker can't handle: " + received_packet.to_string());
-
-                //psk->send(peerid, beltpp::packet(beltpp::stream_drop()));
-                break;
-            }
-            }   // switch ref_packet.type()
-
-            m_pimpl->ptr_direct_stream->send(admin_peerid, packet());
+            m_pimpl->ptr_direct_stream->send(admin_peerid, std::move(received_packet));
         }
         catch (std::exception const& e)
         {
@@ -167,20 +211,12 @@ void worker::run(bool& stop)
 
         try
         {
-            m_pimpl->ptr_stream->send("", std::move(received_packet));
-            m_pimpl->writeln_node("got message from admin");
-            switch (received_packet.type())
+            if (peerid == admin_peerid &&
+                (received_packet.type() != beltpp::stream_join::rtt &&
+                 received_packet.type() != beltpp::stream_drop::rtt)
+                )
             {
-            case beltpp::stream_join::rtt:
-            {
-                m_pimpl->writeln_node("worker: joined: " + peerid);
-                break;
-            }
-            case beltpp::stream_drop::rtt:
-            {
-                m_pimpl->writeln_node("worker: dropped: " + peerid);
-                break;
-            }
+                m_pimpl->ptr_stream->send(string(), std::move(received_packet));
             }
         }
         catch (std::exception const& e)

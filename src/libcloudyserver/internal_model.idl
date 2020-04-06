@@ -21,5 +21,16 @@ module InternalModel
         String address
         String signature
     }
+
+    class CatalogueTree
+    {
+        Set String names
+        Set String checksums
+    }
+
+    class PendingForIndex
+    {
+        Array Array String paths
+    }
 }
 ////1

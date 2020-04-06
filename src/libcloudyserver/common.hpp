@@ -26,6 +26,7 @@ std::chrono::steady_clock::duration const event_timer_period = std::chrono::seco
 
 beltpp::void_unique_ptr get_admin_putl();
 beltpp::void_unique_ptr get_storage_putl();
+beltpp::void_unique_ptr get_internal_putl();
 
 bool verify_storage_order(std::string const& storage_order_token,
                           std::string& channel_address,

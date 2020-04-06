@@ -27,6 +27,8 @@ add_library(cloudyserver
     admin_http.hpp
     admin_server.cpp
     admin_server.hpp
+    catalogue_tree.cpp
+    catalogue_tree.hpp
     common.cpp
     common.hpp
     direct_stream.cpp

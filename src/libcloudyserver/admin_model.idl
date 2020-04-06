@@ -1,6 +1,61 @@
 module AdminModel
 {
-    class A {}
+    class CatalogueTreeGet
+    {
+        Array String path
+    }
+
+    class CatalogueTreePut
+    {
+        Array String path
+    }
+
+    class CatalogueTreeResponse
+    {
+        Array CatalogueListItemFile files
+        Array CatalogueListItemDirectory directories
+    }
+
+    class CatalogueListItemFile
+    {
+        String name
+        Array String checksums
+    }
+
+    class CatalogueListItemDirectory
+    {
+        String name
+    }
+
+    class LogGet
+    {
+    }
+
+    class LogDelete
+    {
+    }
+
+    class Log
+    {
+        Array Object log
+    }
+
+    class ProcessIndexRequest
+    {
+        Array String path
+    }
+
+    class ProcessIndexResult
+    {
+        Array String path
+        String sha256sum
+    }
+
+    class ProcessIndexProblem
+    {
+        Array String path
+        String reason
+    }
 
     class RemoteError
     {
