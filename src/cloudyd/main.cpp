@@ -126,7 +126,7 @@ int main(int argc, char** argv)
 
         auto fs_log = meshpp::data_directory_path("log");
         auto fs_storage = meshpp::data_directory_path("storage");
-        auto fs_catalogue_tree = meshpp::data_directory_path("catalogue_tree");
+        auto fs_library = meshpp::data_directory_path("library");
         auto fs_admin = meshpp::data_directory_path("admin");
 
         cout << "admin bind address: " << admin_bind_to_address.to_string() << endl;
@@ -148,7 +148,7 @@ int main(int argc, char** argv)
         cloudy::direct_channel direct_channel;
 
         cloudy::admin_server admin(admin_bind_to_address,
-                                   fs_catalogue_tree,
+                                   fs_library,
                                    fs_admin,
                                    pv_key,
                                    plogger_admin.get(),

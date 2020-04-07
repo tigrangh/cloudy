@@ -4,7 +4,7 @@
 #include "admin_http.hpp"
 #include "admin_model.hpp"
 #include "internal_model.hpp"
-#include "catalogue_tree.hpp"
+#include "library.hpp"
 
 #include <belt.pp/socket.hpp>
 #include <belt.pp/packet.hpp>
@@ -50,7 +50,7 @@ public:
 
     stream_ptr ptr_direct_stream;
 
-    cloudy::catalogue_tree catalogue_tree;
+    cloudy::library library;
     meshpp::file_loader<AdminModel::Log,
                         &AdminModel::Log::from_string,
                         &AdminModel::Log::to_string> log;
@@ -59,7 +59,7 @@ public:
     wait_result wait_result_info;
 
     admin_server_internals(ip_address const& bind_to_address,
-                           filesystem::path const& fs_catalogue_tree,
+                           filesystem::path const& fs_library,
                            filesystem::path const& fs_admin,
                            meshpp::private_key const& _pv_key,
                            ilog* _plogger,
@@ -68,7 +68,7 @@ public:
         , ptr_eh(beltpp::libsocket::construct_event_handler())
         , ptr_socket(beltpp::libsocket::getsocket<rpc_sf>(*ptr_eh))
         , ptr_direct_stream(cloudy::construct_direct_stream(admin_peerid, *ptr_eh, channel))
-        , catalogue_tree(fs_catalogue_tree)
+        , library(fs_library)
         , log(fs_admin / "log.json")
         , pv_key(_pv_key)
     {
@@ -96,25 +96,25 @@ public:
 
     void save()
     {
-        catalogue_tree.save();
+        library.save();
         log.save();
     }
 
     void commit() noexcept
     {
-        catalogue_tree.save();
+        library.save();
         log.save();
     }
 
     void discard() noexcept
     {
-        catalogue_tree.save();
+        library.save();
         log.save();
     }
 
     void clear()
     {
-        catalogue_tree.clear();
+        library.clear();
         log->log.clear();
     }
 };
@@ -123,13 +123,13 @@ public:
 using namespace AdminModel;
 
 admin_server::admin_server(ip_address const& bind_to_address,
-                           filesystem::path const& fs_catalogue_tree,
+                           filesystem::path const& fs_library,
                            filesystem::path const& fs_admin,
                            meshpp::private_key const& pv_key,
                            ilog* plogger,
                            direct_channel& channel)
     : m_pimpl(new detail::admin_server_internals(bind_to_address,
-                                                 fs_catalogue_tree,
+                                                 fs_library,
                                                  fs_admin,
                                                  pv_key,
                                                  plogger,
@@ -151,7 +151,7 @@ void admin_server::run(bool& stop_check)
 
 
     {
-        auto paths = m_pimpl->catalogue_tree.process_index();
+        auto paths = m_pimpl->library.process_index();
         for (auto&& path : paths)
         {
             ProcessIndexRequest request;
@@ -215,18 +215,18 @@ void admin_server::run(bool& stop_check)
                     m_pimpl->writeln_node_warning(msg.reason + ", " + peerid);
                     break;
                 }
-                case CatalogueTreeGet::rtt:
+                case LibraryGet::rtt:
                 {
-                    CatalogueTreeGet request;
+                    LibraryGet request;
                     std::move(received_packet).get(request);
 
-                    stream.send(peerid, packet(m_pimpl->catalogue_tree.list(request.path)));
+                    stream.send(peerid, packet(m_pimpl->library.list(request.path)));
                     break;
                 }
-                case CatalogueTreePut::rtt:
+                case LibraryPut::rtt:
                 {
-                    CatalogueTreePut request;
-                    CatalogueTreeResponse response;
+                    LibraryPut request;
+                    LibraryResponse response;
 
                     std::move(received_packet).get(request);
 
@@ -235,11 +235,11 @@ void admin_server::run(bool& stop_check)
                         ProcessIndexRequest process_index_request;
                         process_index_request.path = request.path;
 
-                        m_pimpl->catalogue_tree.index(std::move(process_index_request.path));
+                        m_pimpl->library.index(std::move(process_index_request.path));
 
                         request.path.pop_back();
                     }
-                    stream.send(peerid, packet(m_pimpl->catalogue_tree.list(request.path)));
+                    stream.send(peerid, packet(m_pimpl->library.list(request.path)));
 
                     stream.send(peerid, packet(response));
                     break;
@@ -252,7 +252,14 @@ void admin_server::run(bool& stop_check)
                 }
                 case LogDelete::rtt:
                 {
-                    m_pimpl->log->log.clear();
+                    LogDelete request;
+                    std::move(received_packet).get(request);
+
+                    auto& log = m_pimpl->log->log;
+                    if (request.count > log.size())
+                        request.count = log.size();
+
+                    log.erase(log.begin(), log.begin() + request.count);
                     stream.send(peerid, packet(*m_pimpl->log));
 
                     break;
@@ -315,8 +322,8 @@ void admin_server::run(bool& stop_check)
             ProcessIndexResult request;
             received_packet.get(request);
 
-            m_pimpl->catalogue_tree.process_index_done(request.path);
-            m_pimpl->catalogue_tree.add(std::move(request.path), request.sha256sum);
+            m_pimpl->library.process_index_done(request.path);
+            m_pimpl->library.add(std::move(request.path), request.sha256sum);
 
             m_pimpl->log->log.push_back(std::move(received_packet));
 
@@ -327,7 +334,7 @@ void admin_server::run(bool& stop_check)
             ProcessIndexProblem request;
             received_packet.get(request);
 
-            m_pimpl->catalogue_tree.process_index_done(request.path);
+            m_pimpl->library.process_index_done(request.path);
 
             m_pimpl->log->log.push_back(std::move(received_packet));
             break;

@@ -27,14 +27,14 @@ add_library(cloudyserver
     admin_http.hpp
     admin_server.cpp
     admin_server.hpp
-    catalogue_tree.cpp
-    catalogue_tree.hpp
     common.cpp
     common.hpp
     direct_stream.cpp
     direct_stream.hpp
     internal_model.hpp
     internal_model.gen.hpp
+    library.cpp
+    library.hpp
     storage.cpp
     storage.hpp
     storage_model.hpp

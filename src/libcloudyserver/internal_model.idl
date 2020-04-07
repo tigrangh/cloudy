@@ -22,7 +22,7 @@ module InternalModel
         String signature
     }
 
-    class CatalogueTree
+    class LibraryTree
     {
         Set String names
         Set String checksums

@@ -1,28 +1,28 @@
 module AdminModel
 {
-    class CatalogueTreeGet
+    class LibraryGet
     {
         Array String path
     }
 
-    class CatalogueTreePut
+    class LibraryPut
     {
         Array String path
     }
 
-    class CatalogueTreeResponse
+    class LibraryResponse
     {
-        Array CatalogueListItemFile files
-        Array CatalogueListItemDirectory directories
+        Array LibraryItemFile files
+        Array LibraryItemDirectory directories
     }
 
-    class CatalogueListItemFile
+    class LibraryItemFile
     {
         String name
         Array String checksums
     }
 
-    class CatalogueListItemDirectory
+    class LibraryItemDirectory
     {
         String name
     }
@@ -33,6 +33,7 @@ module AdminModel
 
     class LogDelete
     {
+        UInt64 count
     }
 
     class Log

@@ -23,7 +23,7 @@ class CLOUDYSERVERSHARED_EXPORT admin_server
 {
 public:
     admin_server(beltpp::ip_address const& bind_to_address,
-                 boost::filesystem::path const& fs_catalogue_tree,
+                 boost::filesystem::path const& fs_library,
                  boost::filesystem::path const& fs_admin,
                  meshpp::private_key const& pv_key,
                  beltpp::ilog* plogger,
