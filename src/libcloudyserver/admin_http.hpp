@@ -49,6 +49,22 @@ string response_log(beltpp::detail::session_special_data& ssd,
     else
         return beltpp::http::http_internal_server_error(ssd, pc.to_string());
 }
+inline string response_index_list(beltpp::detail::session_special_data& ssd,
+                                  beltpp::packet const& pc)
+{
+    if (pc.type() == IndexListResponse::rtt)
+        return beltpp::http::http_response(ssd, pc.to_string());
+    else
+        return beltpp::http::http_internal_server_error(ssd, pc.to_string());
+}
+inline string response_index(beltpp::detail::session_special_data& ssd,
+                             beltpp::packet const& pc)
+{
+    if (pc.type() == LibraryIndex::rtt)
+        return beltpp::http::http_response(ssd, pc.to_string());
+    else
+        return beltpp::http::http_internal_server_error(ssd, pc.to_string());
+}
 
 template <beltpp::detail::pmsg_all (*fallback_message_list_load)(
         std::string::const_iterator&,
@@ -125,6 +141,31 @@ beltpp::detail::pmsg_all message_list_load(
                 return pmsgall;
 
             return protocol_error();
+        }
+        else if (ss.type == beltpp::http::detail::scan_status::get &&
+                 1 == ss.resource.path.size() &&
+                 ss.resource.path.front() == "index")
+        {
+            ssd.session_specal_handler = &response_index_list;
+            auto p = ::beltpp::new_void_unique_ptr<IndexListGet>();
+            //IndexListGet& ref = *reinterpret_cast<IndexListGet*>(p.get());
+
+            return ::beltpp::detail::pmsg_all(IndexListGet::rtt,
+                                              std::move(p),
+                                              &IndexListGet::pvoid_saver);
+        }
+        else if (ss.type == beltpp::http::detail::scan_status::get &&
+                 2 == ss.resource.path.size() &&
+                 ss.resource.path.front() == "index")
+        {
+            ssd.session_specal_handler = &response_index;
+            auto p = ::beltpp::new_void_unique_ptr<IndexGet>();
+            IndexGet& ref = *reinterpret_cast<IndexGet*>(p.get());
+            ref.sha256sum = ss.resource.path.back();
+
+            return ::beltpp::detail::pmsg_all(IndexGet::rtt,
+                                              std::move(p),
+                                              &IndexGet::pvoid_saver);
         }
         else if (ss.type == beltpp::http::detail::scan_status::get &&
                  false == ss.resource.path.empty() &&

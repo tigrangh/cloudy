@@ -9,6 +9,8 @@
 #include <unordered_set>
 
 using std::string;
+using std::pair;
+using std::vector;
 namespace chrono = std::chrono;
 
 namespace cloudy
@@ -84,6 +86,21 @@ bool verify_storage_order(string const& storage_order_token,
         return false;
 
     return true;
+}
+
+pair<string, string> join_path(vector<string> const& path)
+{
+    string path_string;
+    string last_name;
+    for (auto const& name : path)
+    {
+        if (name == "." || name == "..")
+            throw std::runtime_error("self or parent directories are not supported");
+        path_string += "/" + name;
+        last_name = name;
+    }
+
+    return std::make_pair(path_string, last_name);
 }
 
 namespace detail

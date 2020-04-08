@@ -1,5 +1,91 @@
 module InternalModel
 {
+    ///
+    //  stored in filesystem
+    ///
+    class LibraryTree
+    {
+        Set String names
+        Set String checksums
+    }
+
+    class PendingForIndexItem
+    {
+        String sha256sum
+        Array String path
+    }
+    class PendingForIndex
+    {
+        Array PendingForIndexItem items
+    }
+
+    class PendingForMediaCheck
+    {
+        Array MediaCheckProgress items
+    }
+
+    class MediaCheckProgress
+    {
+        Array String path
+        MediaType type
+        Hash MediaType MediaCheckProgressPerType types
+    }
+    class MediaCheckProgressPerType
+    {
+        UInt64 dimension_index
+        Array UInt64 dimensions
+        Hash UInt64 MediaSequence overlays
+    }
+    enum MediaType { video image audio document end_value }
+
+    class MediaSequence
+    {
+        Array MediaFrame sequence
+    }
+    class MediaFrame
+    {
+        UInt64 count
+        String uri
+    }
+
+    ///
+    ///
+
+    class ProcessIndexRequest
+    {
+        Array String path
+    }
+
+    class ProcessIndexResult
+    {
+        Array String path
+        String sha256sum
+    }
+
+    class ProcessCheckMediaRequest
+    {
+        UInt64 dimension
+        Array String path
+        MediaType type
+        UInt64 accumulated
+    }
+
+    class ProcessCheckMediaResult
+    {
+        ProcessCheckMediaRequest request
+
+        UInt64 count
+        String data
+    }
+
+    class AdminModelWrapper
+    {
+        Extension package
+    }
+
+    ///
+    // these interface with storage api
+    ///
     class StorageOrder
     {
         String storage_address
@@ -20,17 +106,6 @@ module InternalModel
     {
         String address
         String signature
-    }
-
-    class LibraryTree
-    {
-        Set String names
-        Set String checksums
-    }
-
-    class PendingForIndex
-    {
-        Array Array String paths
     }
 }
 ////1

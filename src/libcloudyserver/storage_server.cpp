@@ -167,11 +167,11 @@ void storage_server::run(bool& stop)
 
                 string file_uri;
 
-                /*if (false)
+                //if (false)
                 {
                     file_uri = file_info.uri;
                 }
-                else*/
+                /*else
                 {
                     string channel_address;
                     string storage_address;
@@ -189,7 +189,7 @@ void storage_server::run(bool& stop)
                                                       tp) ||
                         m_pimpl->pb_key.to_string() != channel_address)
                         file_uri.clear();
-                }
+                }*/
 
                 StorageFile file;
                 if (false == file_uri.empty() &&
@@ -272,16 +272,6 @@ void storage_server::run(bool& stop)
         {
             switch (received_packet.type())
             {
-            case beltpp::stream_join::rtt:
-            {
-                m_pimpl->writeln_node("storage: joined: " + peerid);
-                break;
-            }
-            case beltpp::stream_drop::rtt:
-            {
-                m_pimpl->writeln_node("storage: dropped: " + peerid);
-                break;
-            }
             case StorageFile::rtt:
             {
                 StorageFile storage_file;

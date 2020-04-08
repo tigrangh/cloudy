@@ -57,15 +57,13 @@ filesystem::path check_path(vector<string> const& path)
 
 packet processor_worker(packet&& package)
 {
-    std::this_thread::sleep_for(std::chrono::seconds(10));
-
     packet result;
 
     switch(package.type())
     {
-    case AdminModel::ProcessIndexRequest::rtt:
+    case InternalModel::ProcessIndexRequest::rtt:
     {
-        AdminModel::ProcessIndexRequest request;
+        InternalModel::ProcessIndexRequest request;
         std::move(package).get(request);
 
         try
@@ -78,7 +76,7 @@ packet processor_worker(packet&& package)
             if (begin == end)
                 throw std::runtime_error("no such file");
 
-            AdminModel::ProcessIndexResult response;
+            InternalModel::ProcessIndexResult response;
             response.path = request.path;
             response.sha256sum = meshpp::hash(begin, end);
 
@@ -86,12 +84,47 @@ packet processor_worker(packet&& package)
         }
         catch (std::exception const& ex)
         {
+            InternalModel::AdminModelWrapper response_wrapper;
             AdminModel::ProcessIndexProblem response;
             response.path = request.path;
             response.reason = ex.what();
 
+            response_wrapper.package.set(std::move(response));
+
+            result.set(std::move(response_wrapper));
+        }
+        break;
+    }
+    case InternalModel::ProcessCheckMediaRequest::rtt:
+    {
+        try
+        {
+            InternalModel::ProcessCheckMediaRequest request;
+            std::move(package).get(request);
+            InternalModel::ProcessCheckMediaResult response;
+
+            response.request = std::move(request);
+            response.count = 0;
+            response.data.clear();
+
+            response.data = InternalModel::to_string(response.request.type) + ", " +
+                            std::to_string(response.request.dimension) + ", " +
+                            std::to_string(response.request.accumulated);
+
+            response.count = 1;
+
+            if (response.request.accumulated == 2)
+            {
+                response.count = 0;
+                response.data.clear();
+            }
+
             result.set(std::move(response));
         }
+        catch (...)
+        {
+        }
+
         break;
     }
     }

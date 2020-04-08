@@ -1,5 +1,21 @@
 module AdminModel
 {
+    class IndexListGet
+    {
+    }
+
+    class IndexListResponse
+    {
+        Hash String LibraryIndex list_index
+    }
+
+    class IndexGet
+    {
+        String sha256sum
+    }
+
+    // LibraryIndex is used as IndexResponse
+
     class LibraryGet
     {
         Array String path
@@ -41,21 +57,48 @@ module AdminModel
         Array Object log
     }
 
-    class ProcessIndexRequest
-    {
-        Array String path
-    }
-
-    class ProcessIndexResult
-    {
-        Array String path
-        String sha256sum
-    }
-
     class ProcessIndexProblem
     {
         Array String path
         String reason
+    }
+
+    class CheckMediaResult
+    {
+        Array String path
+        Array String mime_type
+    }
+
+    class CheckMediaProblem
+    {
+        Array String path
+        String reason
+    }
+
+    class MediaSequence
+    {
+        Array MediaFrame sequence
+    }
+    class MediaFrame
+    {
+        UInt64 count
+        String uri
+    }
+    class MediaDescription
+    {
+        Array MediaTypeDescription types
+    }
+    class MediaTypeDescription
+    {
+        MediaType type
+        Hash UInt64 MediaSequence overlays
+    }
+    enum MediaType { video image audio document end_value }
+
+    class LibraryIndex
+    {
+        Set String paths
+        MediaDescription media_description
     }
 
     class RemoteError

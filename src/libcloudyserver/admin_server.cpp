@@ -19,6 +19,7 @@
 #include <memory>
 #include <chrono>
 #include <unordered_set>
+#include <utility>
 
 namespace cloudy
 {
@@ -37,6 +38,18 @@ using std::unique_ptr;
 namespace chrono = std::chrono;
 using std::unordered_set;
 
+string mime_type(AdminModel::MediaType type)
+{
+    string result;
+    if (type == AdminModel::MediaType::video)
+        result = "video/mp4";
+    else if (type == AdminModel::MediaType::image)
+        result = "image/jpeg";
+    else
+        throw std::logic_error("mime type handling");
+
+    return result;
+}
 namespace detail
 {
 using rpc_sf = beltpp::socket_family_t<&http::message_list_load<&AdminModel::message_list_load>>;
@@ -55,6 +68,9 @@ public:
                         &AdminModel::Log::from_string,
                         &AdminModel::Log::to_string> log;
 
+    meshpp::map_loader<InternalModel::ProcessCheckMediaResult> pending_for_storage;
+    string processing_for_storage;
+
     meshpp::private_key pv_key;
     wait_result wait_result_info;
 
@@ -70,6 +86,8 @@ public:
         , ptr_direct_stream(cloudy::construct_direct_stream(admin_peerid, *ptr_eh, channel))
         , library(fs_library)
         , log(fs_admin / "log.json")
+        , pending_for_storage("pending_for_storage", fs_admin, 10000, get_internal_putl())
+        , processing_for_storage()
         , pv_key(_pv_key)
     {
         ptr_eh->set_timer(event_timer_period);
@@ -98,24 +116,136 @@ public:
     {
         library.save();
         log.save();
+        pending_for_storage.save();
     }
 
     void commit() noexcept
     {
-        library.save();
-        log.save();
+        library.commit();
+        log.commit();
+        pending_for_storage.commit();
     }
 
     void discard() noexcept
     {
-        library.save();
-        log.save();
+        library.discard();
+        log.discard();
+        pending_for_storage.discard();
     }
 
     void clear()
     {
         library.clear();
         log->log.clear();
+    }
+
+    void store(InternalModel::ProcessCheckMediaResult&& pending_data)
+    {
+        string path_string = join_path(pending_data.request.path).first;
+
+        if (path_string.empty())
+            throw std::logic_error("admin_server_internals::store: path_string.empty()");
+
+        bool inserted = pending_for_storage.insert(path_string, std::move(pending_data));
+        if (false == inserted)
+            throw std::logic_error("admin_server_internals::store: false == inserted");
+    }
+    pair<string, string> process_storage()
+    {
+        pair<string, string> result;
+        if (false == processing_for_storage.empty())
+            return result;
+
+        if (false == pending_for_storage.keys().empty())
+        {
+            auto processing = *pending_for_storage.keys().begin();
+
+            auto const& file = pending_for_storage.as_const().at(processing);
+
+            result = std::make_pair(file.data, mime_type(static_cast<AdminModel::MediaType>(file.request.type)));
+            processing_for_storage = processing;
+        }
+
+        return result;
+    }
+
+    void process_storage_done(string const& uri,
+                              string const& error_override)
+    {
+        InternalModel::ProcessCheckMediaResult& result =
+                pending_for_storage.at(processing_for_storage);
+
+        process_check_done(std::move(result.request),
+                           result.count,
+                           uri,
+                           error_override);
+
+        pending_for_storage.erase(processing_for_storage);
+        processing_for_storage.clear();
+    }
+
+    void process_check_done(InternalModel::ProcessCheckMediaRequest&& progress_info,
+                            uint64_t count,
+                            string const& uri,
+                            string const& error_override)
+    {
+        auto ptr_description =
+                library.process_check_done(progress_info,
+                                           count,
+                                           uri);
+
+        string sha256sum = library.process_index_retrieve_hash(progress_info.path);
+        if (sha256sum.empty())
+            throw std::logic_error("process_check_done: sha256sum.empty()");
+
+        if (uri.empty() && count)
+        {
+            AdminModel::CheckMediaProblem problem;
+            problem.path = progress_info.path;
+            problem.reason = "problem with storage";
+            if (false == error_override.empty())
+                problem.reason = error_override;
+
+            log->log.push_back(packet(std::move(problem)));
+
+            for (auto const& type_item : ptr_description->types)
+            {
+                for (auto const& overlay : type_item.overlays)
+                {
+                    for (auto const& frame : overlay.second.sequence)
+                    {
+                        StorageModel::StorageFileDelete request;
+                        request.uri = frame.uri;
+                        ptr_direct_stream->send(storage_peerid, packet(std::move(request)));
+
+                        writeln_node("asking storage to delete: " + frame.uri);
+                    }
+                }
+            }
+            library.process_index_done(progress_info.path);
+        }
+        else if (ptr_description &&
+                 ptr_description->types.empty())
+        {
+            AdminModel::CheckMediaProblem problem;
+            problem.path = progress_info.path;
+            problem.reason = "was not able to detect any media type";
+            if (false == error_override.empty())
+                problem.reason = error_override;
+            log->log.push_back(packet(std::move(problem)));
+            library.process_index_done(progress_info.path);
+        }
+        else if (ptr_description &&
+                 false == ptr_description->types.empty())
+        {
+            AdminModel::CheckMediaResult success;
+            success.path = progress_info.path;
+            for (auto const& type_item : ptr_description->types)
+                success.mime_type.push_back(mime_type(type_item.type));
+            log->log.push_back(packet(std::move(success)));
+            library.add(std::move(*ptr_description), std::move(progress_info.path), sha256sum);
+            library.process_index_done(progress_info.path);
+        }
     }
 };
 }
@@ -154,9 +284,24 @@ void admin_server::run(bool& stop_check)
         auto paths = m_pimpl->library.process_index();
         for (auto&& path : paths)
         {
-            ProcessIndexRequest request;
+            InternalModel::ProcessIndexRequest request;
             request.path = std::move(path);
             m_pimpl->ptr_direct_stream->send(worker_peerid, packet(request));
+        }
+    }
+    {
+        auto items = m_pimpl->library.process_check();
+        for (auto&& item : items)
+            m_pimpl->ptr_direct_stream->send(worker_peerid, packet(std::move(item)));
+    }
+    {
+        auto data = m_pimpl->process_storage();
+        if (false == data.first.empty())
+        {
+            StorageModel::StorageFile file;
+            file.data = std::move(data.first);
+            file.mime_type = std::move(data.second);
+            m_pimpl->ptr_direct_stream->send(storage_peerid, packet(std::move(file)));
         }
     }
 
@@ -174,109 +319,124 @@ void admin_server::run(bool& stop_check)
 
         try
         {
-            if (/*false == m_pimpl->m_nodeid_sessions.process(peerid, std::move(received_packet)) &&
-                false == m_pimpl->m_sync_sessions.process(peerid, std::move(received_packet))*/
-                true)
+            beltpp::on_failure guard([this]{ m_pimpl->discard(); });
+
+            switch (received_packet.type())
             {
-                beltpp::on_failure guard([this]{ m_pimpl->discard(); });
+            case beltpp::stream_join::rtt:
+            {
+                m_pimpl->writeln_node("admin: joined: " + peerid);
+                break;
+            }
+            case beltpp::stream_drop::rtt:
+            {
+                m_pimpl->writeln_node("admin: dropped: " + peerid);
+                break;
+            }
+            case beltpp::stream_protocol_error::rtt:
+            {
+                beltpp::stream_protocol_error msg;
+                m_pimpl->writeln_node("admin: protocol error: " + peerid);
+                m_pimpl->writeln_node(msg.buffer);
+                stream.send(peerid, beltpp::packet(beltpp::stream_drop()));
 
-                switch (received_packet.type())
+                break;
+            }
+            case beltpp::socket_open_refused::rtt:
+            {
+                beltpp::socket_open_refused msg;
+                std::move(received_packet).get(msg);
+                m_pimpl->writeln_node_warning(msg.reason + ", " + peerid);
+                break;
+            }
+            case beltpp::socket_open_error::rtt:
+            {
+                beltpp::socket_open_error msg;
+                std::move(received_packet).get(msg);
+                m_pimpl->writeln_node_warning(msg.reason + ", " + peerid);
+                break;
+            }
+            case IndexListGet::rtt:
+            {
+                stream.send(peerid, packet(m_pimpl->library.list_index(string())));
+                break;
+            }
+            case IndexGet::rtt:
+            {
+                IndexGet request;
+                std::move(received_packet).get(request);
+
+                LibraryIndex response;
+                auto temp = m_pimpl->library.list_index(request.sha256sum);
+
+                if (temp.list_index.empty())
+                    throw std::runtime_error("index entry not found: " + request.sha256sum);
+
+                response = temp.list_index.begin()->second;
+
+                stream.send(peerid, packet(std::move(response)));
+                break;
+            }
+            case LibraryGet::rtt:
+            {
+                LibraryGet request;
+                std::move(received_packet).get(request);
+
+                stream.send(peerid, packet(m_pimpl->library.list(request.path)));
+                break;
+            }
+            case LibraryPut::rtt:
+            {
+                LibraryPut request;
+                LibraryResponse response;
+
+                std::move(received_packet).get(request);
+
+                if (false == request.path.empty())
                 {
-                case beltpp::stream_join::rtt:
-                {
-                    m_pimpl->writeln_node("admin: joined: " + peerid);
-                    break;
+                    auto path_copy = request.path;
+
+                    m_pimpl->library.index(std::move(path_copy));
+
+                    request.path.pop_back();
                 }
-                case beltpp::stream_drop::rtt:
-                {
-                    m_pimpl->writeln_node("admin: dropped: " + peerid);
-                    break;
-                }
-                case beltpp::stream_protocol_error::rtt:
-                {
-                    beltpp::stream_protocol_error msg;
-                    m_pimpl->writeln_node("admin: protocol error: " + peerid);
-                    m_pimpl->writeln_node(msg.buffer);
-                    stream.send(peerid, beltpp::packet(beltpp::stream_drop()));
+                stream.send(peerid, packet(m_pimpl->library.list(request.path)));
 
-                    break;
-                }
-                case beltpp::socket_open_refused::rtt:
-                {
-                    beltpp::socket_open_refused msg;
-                    std::move(received_packet).get(msg);
-                    m_pimpl->writeln_node_warning(msg.reason + ", " + peerid);
-                    break;
-                }
-                case beltpp::socket_open_error::rtt:
-                {
-                    beltpp::socket_open_error msg;
-                    std::move(received_packet).get(msg);
-                    m_pimpl->writeln_node_warning(msg.reason + ", " + peerid);
-                    break;
-                }
-                case LibraryGet::rtt:
-                {
-                    LibraryGet request;
-                    std::move(received_packet).get(request);
+                stream.send(peerid, packet(response));
+                break;
+            }
+            case LogGet::rtt:
+            {
+                stream.send(peerid, packet(*m_pimpl->log));
 
-                    stream.send(peerid, packet(m_pimpl->library.list(request.path)));
-                    break;
-                }
-                case LibraryPut::rtt:
-                {
-                    LibraryPut request;
-                    LibraryResponse response;
+                break;
+            }
+            case LogDelete::rtt:
+            {
+                LogDelete request;
+                std::move(received_packet).get(request);
 
-                    std::move(received_packet).get(request);
+                auto& log = m_pimpl->log->log;
+                if (request.count > log.size())
+                    request.count = log.size();
 
-                    if (false == request.path.empty())
-                    {
-                        ProcessIndexRequest process_index_request;
-                        process_index_request.path = request.path;
+                log.erase(log.begin(), log.begin() + request.count);
+                stream.send(peerid, packet(*m_pimpl->log));
 
-                        m_pimpl->library.index(std::move(process_index_request.path));
+                break;
+            }
+            default:
+            {
+                m_pimpl->writeln_node("peer: " + peerid);
+                m_pimpl->writeln_node("admin can't handle: " + received_packet.to_string());
 
-                        request.path.pop_back();
-                    }
-                    stream.send(peerid, packet(m_pimpl->library.list(request.path)));
+                break;
+            }
+            }   // switch received_packet.type()
 
-                    stream.send(peerid, packet(response));
-                    break;
-                }
-                case LogGet::rtt:
-                {
-                    stream.send(peerid, packet(*m_pimpl->log));
-
-                    break;
-                }
-                case LogDelete::rtt:
-                {
-                    LogDelete request;
-                    std::move(received_packet).get(request);
-
-                    auto& log = m_pimpl->log->log;
-                    if (request.count > log.size())
-                        request.count = log.size();
-
-                    log.erase(log.begin(), log.begin() + request.count);
-                    stream.send(peerid, packet(*m_pimpl->log));
-
-                    break;
-                }
-                default:
-                {
-                    m_pimpl->writeln_node("peer: " + peerid);
-                    m_pimpl->writeln_node("admin can't handle: " + received_packet.to_string());
-
-                    break;
-                }
-                }   // switch received_packet.type()
-
-                m_pimpl->save();
-                guard.dismiss();
-                m_pimpl->commit();
-            }   // if not processed by sessions
+            m_pimpl->save();
+            guard.dismiss();
+            m_pimpl->commit();
         }
         catch (std::exception const& e)
         {
@@ -307,36 +467,92 @@ void admin_server::run(bool& stop_check)
         if (peerid == worker_peerid)
         switch (received_packet.type())
         {
-        case beltpp::stream_join::rtt:
+        case InternalModel::ProcessIndexResult::rtt:
         {
-            m_pimpl->writeln_node("admin: joined: " + peerid);
-            break;
-        }
-        case beltpp::stream_drop::rtt:
-        {
-            m_pimpl->writeln_node("admin: dropped: " + peerid);
-            break;
-        }
-        case ProcessIndexResult::rtt:
-        {
-            ProcessIndexResult request;
+            InternalModel::ProcessIndexResult request;
             received_packet.get(request);
 
-            m_pimpl->library.process_index_done(request.path);
-            m_pimpl->library.add(std::move(request.path), request.sha256sum);
-
-            m_pimpl->log->log.push_back(std::move(received_packet));
+            if (m_pimpl->library.indexed(request.sha256sum))
+            {
+                m_pimpl->library.add(MediaDescription(),
+                                     std::move(request.path),
+                                     request.sha256sum);
+                m_pimpl->library.process_index_done(request.path);
+            }
+            else
+            {
+                m_pimpl->library.process_index_store_hash(request.path, request.sha256sum);
+                m_pimpl->library.check(std::move(request.path));
+            }
 
             break;
         }
-        case ProcessIndexProblem::rtt:
+        case InternalModel::ProcessCheckMediaResult::rtt:
         {
-            ProcessIndexProblem request;
+            InternalModel::ProcessCheckMediaResult request;
             received_packet.get(request);
 
-            m_pimpl->library.process_index_done(request.path);
+            if (request.count && request.data.empty())
+                throw std::logic_error("request.count && request.data.empty()");
 
-            m_pimpl->log->log.push_back(std::move(received_packet));
+            if (request.count)
+                m_pimpl->store(std::move(request));
+            else
+                m_pimpl->process_check_done(std::move(request.request),
+                                            0,
+                                            string(),
+                                            string());
+
+            break;
+        }
+        case InternalModel::AdminModelWrapper::rtt:
+        {
+            InternalModel::AdminModelWrapper request_wrapper;
+            std::move(received_packet).get(request_wrapper);
+
+            if (request_wrapper.package.type() == ProcessIndexProblem::rtt)
+            {
+                ProcessIndexProblem request;
+                request_wrapper.package.get(request);
+
+                m_pimpl->library.process_index_done(request.path);
+
+                m_pimpl->log->log.push_back(std::move(received_packet));
+            }
+            break;
+        }
+        }
+        else if (peerid == storage_peerid)
+        switch (received_packet.type())
+        {
+        case StorageModel::StorageFileAddress::rtt:
+        {
+            StorageModel::StorageFileAddress request;
+            received_packet.get(request);
+
+            m_pimpl->process_storage_done(request.uri, string());
+
+            break;
+        }
+        case StorageModel::UriError::rtt:
+        {
+            StorageModel::UriError request;
+            received_packet.get(request);
+
+            if (request.uri_problem_type != StorageModel::UriProblemType::duplicate)
+                throw std::logic_error("request.uri_problem_type != StorageModel::UriProblemType::duplicate");
+
+            m_pimpl->process_storage_done(request.uri, string());
+
+            break;
+        }
+        case StorageModel::RemoteError::rtt:
+        {
+            StorageModel::RemoteError request;
+            received_packet.get(request);
+
+            m_pimpl->process_storage_done(string(), request.message);
+
             break;
         }
         }
@@ -344,18 +560,7 @@ void admin_server::run(bool& stop_check)
         m_pimpl->save();
         guard.dismiss();
         m_pimpl->commit();
-        /*if (false == m_pimpl->m_sessions.process("slave", std::move(ref_packet)))
-        {
-            switch (received_packet.type())
-            {
-
-            }
-        }*/   // if not processed by sessions
     }
-
-//    m_pimpl->m_sessions.erase_all_pending();
-//    m_pimpl->m_sync_sessions.erase_all_pending();
-//    m_pimpl->m_nodeid_sessions.erase_all_pending();
 }
 
 }

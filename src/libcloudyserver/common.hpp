@@ -7,6 +7,8 @@
 
 #include <string>
 #include <chrono>
+#include <utility>
+#include <vector>
 
 namespace cloudy
 {
@@ -35,6 +37,9 @@ bool verify_storage_order(std::string const& storage_order_token,
                           std::string& session_id,
                           uint64_t& seconds,
                           std::chrono::system_clock::time_point& tp);
+
+
+std::pair<std::string, std::string> join_path(std::vector<std::string> const& path);
 
 namespace detail
 {
