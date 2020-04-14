@@ -4,6 +4,8 @@
 #include "internal_model.hpp"
 #include "admin_model.hpp"
 
+#include "libavwrapper.hpp"
+
 #include <belt.pp/packet.hpp>
 #include <belt.pp/processor.hpp>
 
@@ -55,16 +57,16 @@ filesystem::path check_path(vector<string> const& path)
     return fs_path;
 }
 
-packet processor_worker(packet&& package)
+void processor_worker(packet&& package, beltpp::libprocessor::async_result& stream)
 {
-    packet result;
-
     switch(package.type())
     {
     case InternalModel::ProcessIndexRequest::rtt:
     {
         InternalModel::ProcessIndexRequest request;
         std::move(package).get(request);
+
+        packet result;
 
         try
         {
@@ -93,48 +95,76 @@ packet processor_worker(packet&& package)
 
             result.set(std::move(response_wrapper));
         }
+
+        stream.send(std::move(result));
+
         break;
     }
-    case InternalModel::ProcessCheckMediaRequest::rtt:
+    case InternalModel::ProcessMediaCheckRequest::rtt:
     {
+        InternalModel::ProcessMediaCheckRequest request;
         try
         {
-            InternalModel::ProcessCheckMediaRequest request;
             std::move(package).get(request);
-            InternalModel::ProcessCheckMediaResult response;
 
-            response.request = std::move(request);
-            response.count = 0;
-            response.data.clear();
 
-            response.data = InternalModel::to_string(response.request.type) + ", " +
-                            std::to_string(response.request.dimension) + ", " +
-                            std::to_string(response.request.accumulated);
+            libavwrapper::transcoder transcoder;
+            transcoder.from = join_path(request.path).first;
+            transcoder.to = "/home/tigran/sb.2.mp4";
 
-            response.count = 1;
-
-            if (response.request.accumulated == 2)
+            vector<packet> options;
+            string type_definition_str_last;
+            for (auto& type_definition_str : request.media_definition_check.types_definitions)
             {
-                response.count = 0;
-                response.data.clear();
+                packet type_definition;
+                AdminModel::detail::loader(type_definition, type_definition_str, nullptr);
+                options.push_back(std::move(type_definition));
+
+                type_definition_str_last = type_definition_str;
             }
 
-            result.set(std::move(response));
+            transcoder.init(std::move(options));
+            size_t accumulate_count = 0;
+            size_t count = 0;
+            do
+            {
+                count = transcoder.run();
+
+                InternalModel::ProcessMediaCheckResult response;
+
+                response.path = request.path;
+                response.count = count;
+                response.accumulated = accumulate_count;
+
+                AdminModel::detail::loader(response.type, type_definition_str_last, nullptr);
+
+                if (response.count)
+                    response.data = response.type.to_string() +
+                                    ", accumulated: " + std::to_string(accumulate_count) +
+                                    ", count: " + std::to_string(count);
+
+                accumulate_count += response.count;
+
+                stream.send(packet(std::move(response)));
+            }
+            while (count);
         }
         catch (...)
         {
+            InternalModel::ProcessMediaCheckResult response;
+            response.path = request.path;
+
+            stream.send(packet(response));
         }
 
         break;
     }
     }
-
-    return packet(std::move(result));
 }
 
-stream_ptr construct_processor(beltpp::event_handler& eh,
-                               size_t count,
-                               beltpp::libprocessor::fpworker const& worker)
+stream_ptr construct_processor_wrap(beltpp::event_handler& eh,
+                                    size_t count,
+                                    beltpp::libprocessor::fpworker const& worker)
 {
     auto result = beltpp::libprocessor::construct_processor(eh, 2, &processor_worker);
     eh.add(*result);
@@ -155,7 +185,7 @@ public:
                      direct_channel& channel)
         : plogger(_plogger)
         , ptr_eh(beltpp::libprocessor::construct_event_handler())
-        , ptr_stream(construct_processor(*ptr_eh, 2, &processor_worker))
+        , ptr_stream(construct_processor_wrap(*ptr_eh, 2, &processor_worker))
         , ptr_direct_stream(cloudy::construct_direct_stream(worker_peerid, *ptr_eh, channel))
     {
         //ptr_eh->set_timer(event_timer_period);

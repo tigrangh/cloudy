@@ -66,7 +66,6 @@ module AdminModel
     class CheckMediaResult
     {
         Array String path
-        Array String mime_type
     }
 
     class CheckMediaProblem
@@ -77,28 +76,60 @@ module AdminModel
 
     class MediaSequence
     {
-        Array MediaFrame sequence
+        Array MediaFrame frames
     }
     class MediaFrame
     {
         UInt64 count
         String uri
     }
-    class MediaDescription
+    class MediaDefinition
     {
-        Array MediaTypeDescription types
+        Hash String MediaTypeDefinition types_definitions
     }
-    class MediaTypeDescription
+    class MediaTypeDefinition
     {
-        MediaType type
-        Hash UInt64 MediaSequence overlays
+        Object type // MediaTypeDescriptionVideo
+        MediaSequence sequence
     }
-    enum MediaType { video image audio document end_value }
+
+    class MediaTypeDescriptionAVStreamTranscode
+    {
+        String codec
+        String codec_priv_key
+        String codec_priv_value
+    }
+
+    class MediaTypeDescriptionAVStreamMux
+    {
+        String muxer_opt_key
+        String muxer_opt_value
+    }
+
+    class MediaTypeDescriptionVideoFilter
+    {
+        UInt64 height
+        UInt64 width
+        UInt64 fps
+    }
+
+    class MediaTypeDescriptionAVStream
+    {
+        Object transcode// MediaTypeDescriptionAVStreamTranscode
+        Object filter// MediaTypeDescriptionVideoFilter
+    }
+
+    class MediaTypeDescriptionVideoContainer
+    {
+        Object audio// MediaTypeDescriptionAVStream
+        Object video// MediaTypeDescriptionAVStream
+        Object mux// MediaTypeDescriptionAVStreamMux
+    }
 
     class LibraryIndex
     {
         Set String paths
-        MediaDescription media_description
+        MediaDefinition media_definition
     }
 
     class RemoteError
@@ -106,4 +137,4 @@ module AdminModel
         String message
     }
 }
-////1
+////2

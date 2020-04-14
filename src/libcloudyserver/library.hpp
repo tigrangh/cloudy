@@ -18,12 +18,12 @@ class LibraryResponse;
 }
 namespace InternalModel
 {
-class ProcessCheckMediaRequest;
-class ProcessCheckMediaResult;
+class ProcessMediaCheckRequest;
+class ProcessMediaCheckResult;
 }
 namespace AdminModel
 {
-class MediaDescription;
+class MediaDefinition;
 class IndexListResponse;
 }
 
@@ -47,9 +47,8 @@ public:
     void clear();
 
     AdminModel::LibraryResponse list(std::vector<std::string> const& path) const;
-    void add(AdminModel::MediaDescription&& media_description,
-             std::vector<std::string>&& path,
-             std::string const& checksum);
+    void add(InternalModel::ProcessMediaCheckResult&& progress_item,
+             std::string const& uri);
 
     void index(std::vector<std::string>&& path);
     std::vector<std::vector<std::string>> process_index();
@@ -57,12 +56,11 @@ public:
     std::string process_index_retrieve_hash(std::vector<std::string> const& path) const;
     void process_index_done(std::vector<std::string> const& path);
 
-    void check(std::vector<std::string>&& path);
-    std::vector<InternalModel::ProcessCheckMediaRequest> process_check();
+    bool check(std::vector<std::string>&& path);
+    std::vector<InternalModel::ProcessMediaCheckRequest> process_check();
 
-    std::unique_ptr<AdminModel::MediaDescription>
-    process_check_done(InternalModel::ProcessCheckMediaRequest const& item,
-                       uint64_t count,
+    bool
+    process_check_done(InternalModel::ProcessMediaCheckResult&& item,
                        std::string const& uri);
 
     bool indexed(std::string const& checksum) const;

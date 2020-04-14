@@ -4,6 +4,7 @@
 #include "admin_model.hpp"
 
 #include <mesh.pp/fileutility.hpp>
+#include <mesh.pp/cryptoutility.hpp>
 
 #include <utility>
 #include <unordered_map>
@@ -47,7 +48,13 @@ public:
 
 library::library(boost::filesystem::path const& path)
     : m_pimpl(new detail::library_internal(path))
-{}
+{
+    for (auto const& item : m_pimpl->pending_for_index.as_const()->items)
+    {
+        if (false == item.sha256sum.empty())
+            m_pimpl->processing_for_index.insert(join_path(item.path).first);
+    }
+}
 library::~library()
 {}
 
@@ -119,59 +126,69 @@ AdminModel::LibraryResponse library::list(vector<string> const& path) const
     return result;
 }
 
-void library::add(AdminModel::MediaDescription&& media_description,
-                  vector<string>&& path,
-                  string const& checksum)
+void library::add(ProcessMediaCheckResult&& progress_item,
+                  string const& uri)
 {
     string child;
 
+    string sha256sum = process_index_retrieve_hash(progress_item.path);
+    if (sha256sum.empty())
+        throw std::logic_error("library::add: sha256sum.empty()");
+
     while (true)
     {
-        auto jp = join_path(path);
+        auto jp = join_path(progress_item.path);
         string path_string = jp.first;
         string last_name = jp.second;
 
         if (child.empty())
         {
+            m_pimpl->library_tree.insert(path_string, LibraryTree());
+
+            LibraryTree& tree_item = m_pimpl->library_tree.at(path_string);
+            tree_item.checksums.insert(sha256sum);
+
+            m_pimpl->library_index.insert(sha256sum, AdminModel::LibraryIndex());
+
+            AdminModel::LibraryIndex& index_item = m_pimpl->library_index.at(sha256sum);
+            index_item.paths.insert(path_string);
+
+            if (false == progress_item.type.empty())
             {
-                LibraryTree item;
-                item.checksums.insert(checksum);
-                m_pimpl->library_tree.insert(path_string, item);
-            }
-            {
-                LibraryTree& item = m_pimpl->library_tree.at(path_string);
-                item.checksums.insert(checksum);
-            }
-            {
-                AdminModel::LibraryIndex item;
-                item.media_description = std::move(media_description);
-                item.paths.insert(path_string);
-                m_pimpl->library_index.insert(checksum, item);
-            }
-            {
-                AdminModel::LibraryIndex& item = m_pimpl->library_index.at(checksum);
-                item.paths.insert(path_string);
-                // can also merge old and new media descriptions
+                AdminModel::MediaDefinition& media_definition = index_item.media_definition;
+
+                string progress_item_type_definition_key = progress_item.type.to_string();
+                progress_item_type_definition_key = meshpp::to_base64(progress_item_type_definition_key, false);
+                auto& media_type_definition = media_definition.types_definitions[progress_item_type_definition_key];
+                media_type_definition.type = std::move(progress_item.type);
+
+                uint64_t accumulated = 0;
+                auto& frames = media_type_definition.sequence.frames;
+                if (false == frames.empty())
+                    accumulated = frames.back().count;
+
+                if (accumulated < progress_item.accumulated)
+                    throw std::logic_error("library::add: accumulated < progress_item.request.accumulated");
+
+                AdminModel::MediaFrame frame;
+                frame.uri = uri;
+                frame.count = progress_item.accumulated + progress_item.count;
+                frames.push_back(frame);
             }
         }
         else
         {
-            {
-                LibraryTree item;
-                item.names.insert(child);
-                m_pimpl->library_tree.insert(path_string, item);
-            }
-            {
-                LibraryTree& item = m_pimpl->library_tree.at(path_string);
-                item.names.insert(child);
-            }
+            m_pimpl->library_tree.insert(path_string, LibraryTree());
+
+            LibraryTree& item = m_pimpl->library_tree.at(path_string);
+            item.names.insert(child);
         }
         child = last_name;
 
-        if (path.empty())
+        if (progress_item.path.empty())
             break;
         else
-            path.pop_back();
+            progress_item.path.pop_back();
     }
 }
 
@@ -235,15 +252,67 @@ void library::process_index_done(vector<string> const& path)
     items.erase(end_it, items.end());
 }
 
-void library::check(vector<string>&& path)
+bool library::check(vector<string>&& path)
 {
     string path_string = join_path(path).first;
 
-    MediaCheckProgress check;
+    ProcessMediaCheckRequest check;
     check.path = std::move(path);
-    check.type = MediaType::video;
-    check.types[MediaType::video].dimensions = std::vector<uint64_t>{720, 480, 360, 240, 144};
-    check.types[MediaType::image].dimensions = std::vector<uint64_t>{720};
+
+    {
+        AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
+        video_transcode.codec = "libx265";
+        video_transcode.codec_priv_key = "x265-params";
+        video_transcode.codec_priv_value = "keyint=60:min-keyint=60:scenecut=0";
+
+        AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.height = 720;
+        video_filter.width = 1280;
+        video_filter.fps = 30;
+
+        AdminModel::MediaTypeDescriptionAVStream video;
+        video.transcode.set(std::move(video_transcode));
+        video.filter.set(std::move(video_filter));
+
+        AdminModel::MediaTypeDescriptionAVStreamTranscode audio_transcode;
+        //audio_transcode.codec = "???";
+
+        AdminModel::MediaTypeDescriptionAVStream audio;
+        //audio.transcode.set(std::move(audio_transcode));
+
+        AdminModel::MediaTypeDescriptionVideoContainer container;
+        container.video.set(std::move(video));
+        container.audio.set(std::move(audio));
+
+        check.media_definition_check.types_definitions.insert(container.to_string());
+    }
+    {
+        AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
+        video_transcode.codec = "libx264";
+        video_transcode.codec_priv_key = "x264-params";
+        video_transcode.codec_priv_value = "keyint=60:min-keyint=60:scenecut=0:force-cfr=1";
+
+        AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.height = 1080;
+        video_filter.width = 1920;
+        video_filter.fps = 30;
+
+        AdminModel::MediaTypeDescriptionAVStream video;
+        video.transcode.set(std::move(video_transcode));
+        video.filter.set(std::move(video_filter));
+
+        AdminModel::MediaTypeDescriptionAVStreamTranscode audio_transcode;
+        audio_transcode.codec = "aac";
+
+        AdminModel::MediaTypeDescriptionAVStream audio;
+        audio.transcode.set(std::move(audio_transcode));
+
+        AdminModel::MediaTypeDescriptionVideoContainer container;
+        container.video.set(std::move(video));
+        container.audio.set(std::move(audio));
+
+        check.media_definition_check.types_definitions.insert(container.to_string());
+    }
 
     auto& items = m_pimpl->pending_for_media_check->items;
     bool duplicate = false;
@@ -257,65 +326,38 @@ void library::check(vector<string>&& path)
     }
 
     if (false == duplicate)
+    {
         items.push_back(check);
+        return true;
+    }
+
+    return false;
 }
 
-vector<ProcessCheckMediaRequest> library::process_check()
+vector<ProcessMediaCheckRequest> library::process_check()
 {
-    vector<ProcessCheckMediaRequest> result;
+    vector<ProcessMediaCheckRequest> result;
     if (false == m_pimpl->processing_for_check.empty())
         return result;
 
-    for (InternalModel::MediaCheckProgress const& item : m_pimpl->pending_for_media_check.as_const()->items)
+    for (InternalModel::ProcessMediaCheckRequest const& item : m_pimpl->pending_for_media_check.as_const()->items)
     {
         if (m_pimpl->processing_for_check.size() == 2)
             break;
         auto insert_res = m_pimpl->processing_for_check.insert(join_path(item.path).first);
 
         if (insert_res.second)
-        {
-            ProcessCheckMediaRequest progress_item;
-
-            auto it_type = item.types.find(item.type);
-            if (it_type == item.types.end())
-                throw std::logic_error("library::process_check: it_type == item.types.end()");
-            auto const& dimensions = it_type->second.dimensions;
-            if (dimensions.empty())
-                throw std::logic_error("library::process_check: dimensions.empty()");
-            auto const& overlays_per_type = it_type->second.overlays;
-
-            auto it_dimension = dimensions.cbegin() + it_type->second.dimension_index;
-            /*while (true)
-            {
-                if (overlays_per_type.count(*it_dimension) ||
-                    (it_dimension + 1) == dimensions.crend())
-                    break;
-                ++it_dimension;
-            }*/
-
-            auto it_overlay = overlays_per_type.find(*it_dimension);
-
-            progress_item.accumulated = 0;
-            if (it_overlay != overlays_per_type.end() &&
-                false == it_overlay->second.sequence.empty())
-                progress_item.accumulated = it_overlay->second.sequence.back().count;
-            progress_item.path = item.path;
-            progress_item.dimension = dimensions[it_type->second.dimension_index];
-            progress_item.type = item.type;
-
-            result.push_back(progress_item);
-        }
+            result.push_back(item);
     }
 
     return result;
 }
 
-std::unique_ptr<AdminModel::MediaDescription>
-library::process_check_done(ProcessCheckMediaRequest const& progress_item,
-                            uint64_t count,
+bool
+library::process_check_done(ProcessMediaCheckResult&& progress_item,
                             string const& uri)
 {
-    std::unique_ptr<AdminModel::MediaDescription> result;
+    std::unique_ptr<AdminModel::MediaDefinition> result;
     string string_path = join_path(progress_item.path).first;
 
     auto& items = m_pimpl->pending_for_media_check->items;
@@ -323,115 +365,27 @@ library::process_check_done(ProcessCheckMediaRequest const& progress_item,
     auto it_item = items.begin();
     for (; it_item != items.end(); ++it_item)
     {
-        InternalModel::MediaCheckProgress& item = *it_item;
+        InternalModel::ProcessMediaCheckRequest& item = *it_item;
 
-        if (item.path == progress_item.path &&
-            item.type == progress_item.type)
+        if (item.path == progress_item.path)
         {
-            auto it_type = item.types.find(item.type);
-            if (it_type == item.types.end())
-                throw std::logic_error("library::process_check_done: it_type == item.types.end()");
-
-            auto& progress_per_type = it_type->second.overlays;
-
-            auto& dimensions = it_type->second.dimensions;
-            /*auto it_dimension = dimensions.cbegin();
-            for (; it_dimension != dimensions.cend(); ++it_dimension)
+            if (0 == progress_item.count)
             {
-                if (*it_dimension == progress_item.dimension)
-                    break;
+                items.erase(it_item);
+                m_pimpl->processing_for_check.erase(string_path);
+
+                return true;
             }
-            if (it_dimension == dimensions.cend())
-                throw std::logic_error("library::process_check_done: it_dimension == dimensions.cend()");*/
-            if (dimensions[it_type->second.dimension_index] != progress_item.dimension)
-                throw std::logic_error("library::process_check_done: dimensions[it_type->second.dimension_index] != progress_item.dimension");
-
-            uint64_t accumulated = 0;
-            vector<MediaFrame>& sequence_progress = progress_per_type[progress_item.dimension].sequence;
-
-            if (false == sequence_progress.empty())
-                accumulated = sequence_progress.back().count;
-
-            if (accumulated != progress_item.accumulated)
-                throw std::logic_error("library::process_check_done: accumulated != progress_item.request.accumulated");
-
-            if (false == uri.empty())
-            {
-                if (0 == count)
-                    throw std::logic_error("library::process_check_done: 0 == count");
-
-                MediaFrame frame;
-                frame.uri = uri;
-                frame.count = progress_item.accumulated + count;
-                sequence_progress.push_back(frame);
-            }
-            //  this now means already that either uri is empty - that is an error already has happened
-            //  or 0 == count - in this case it either needs to pass to next check, or there are no more checks
             else
             {
-                if (it_type->second.dimension_index + 1 < dimensions.size())
-                    ++it_type->second.dimension_index;
-                else //if (it_type->second.dimension_index + 1 == dimensions.size())  //  canot switch to next dimension automatically
-                {
-                    if (uri.empty() && count)
-                        item.type = MediaType::end_value; // force to end this media checking task
+                add(std::move(progress_item), uri);
 
-                    // try to switch to next type
-                    while (item.type != MediaType::end_value)
-                    {
-                        uint64_t current_type = static_cast<uint64_t>(item.type);
-                        ++current_type;
-
-                        item.type = static_cast<MediaType>(current_type);
-
-                        if (item.types.count(item.type))
-                            break;
-                    }
-
-                    if (item.type == MediaType::end_value)
-                    {   //  we're done with this item
-                        result.reset(new AdminModel::MediaDescription());
-
-                        for (auto& item_type : item.types)
-                        {
-                            bool type_appended = false;
-
-                            for (auto& type_overlay : item_type.second.overlays)
-                            {
-                                if (false == type_overlay.second.sequence.empty())
-                                {
-                                    if (false == type_appended)
-                                    {
-                                        result->types.push_back(AdminModel::MediaTypeDescription());
-                                        beltpp::assign(result->types.back().type, item_type.first);
-                                        type_appended = true;
-                                    }
-
-                                    uint64_t dimension = type_overlay.first;
-                                    for (auto&& frame : type_overlay.second.sequence)
-                                    {
-                                        AdminModel::MediaFrame new_frame;
-                                        beltpp::assign(new_frame, std::move(frame));
-                                        result->types.back().overlays[dimension].sequence.push_back(std::move(new_frame));
-                                    }
-                                }
-                            }
-
-                            type_appended = false;
-                        }
-
-                        items.erase(it_item);
-                    }
-                }
+                return false;
             }
-
-            break;
         }
     }
 
-    m_pimpl->processing_for_check.erase(string_path);
-
-    return result;
+    throw std::logic_error("library::process_check_done: pending item not found");
 }
 
 bool library::indexed(string const& checksum) const

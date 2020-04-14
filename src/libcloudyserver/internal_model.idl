@@ -21,31 +21,20 @@ module InternalModel
 
     class PendingForMediaCheck
     {
-        Array MediaCheckProgress items
+        Array ProcessMediaCheckRequest items
     }
 
-    class MediaCheckProgress
+    class ProcessMediaCheckRequest
     {
+        UInt64 storage_error_count
         Array String path
-        MediaType type
-        Hash MediaType MediaCheckProgressPerType types
+        MediaDefinition media_definition_check
     }
-    class MediaCheckProgressPerType
-    {
-        UInt64 dimension_index
-        Array UInt64 dimensions
-        Hash UInt64 MediaSequence overlays
-    }
-    enum MediaType { video image audio document end_value }
 
-    class MediaSequence
+    class MediaDefinition
     {
-        Array MediaFrame sequence
-    }
-    class MediaFrame
-    {
-        UInt64 count
-        String uri
+        // value can be MediaTypeDescriptionVideo serialized
+        Set String types_definitions
     }
 
     ///
@@ -62,19 +51,12 @@ module InternalModel
         String sha256sum
     }
 
-    class ProcessCheckMediaRequest
+    class ProcessMediaCheckResult
     {
-        UInt64 dimension
-        Array String path
-        MediaType type
         UInt64 accumulated
-    }
-
-    class ProcessCheckMediaResult
-    {
-        ProcessCheckMediaRequest request
-
         UInt64 count
+        Array String path
+        Extension type // MediaTypeDescriptionVideo
         String data
     }
 
@@ -108,4 +90,4 @@ module InternalModel
         String signature
     }
 }
-////1
+////2

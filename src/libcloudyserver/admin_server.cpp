@@ -18,7 +18,7 @@
 
 #include <memory>
 #include <chrono>
-#include <unordered_set>
+#include <vector>
 #include <utility>
 
 namespace cloudy
@@ -36,20 +36,17 @@ namespace filesystem = boost::filesystem;
 
 using std::unique_ptr;
 namespace chrono = std::chrono;
-using std::unordered_set;
+using std::vector;
 
-string mime_type(AdminModel::MediaType type)
+template <typename>
+string mime_type();
+
+template <>
+string mime_type<AdminModel::MediaTypeDescriptionVideoContainer>()
 {
-    string result;
-    if (type == AdminModel::MediaType::video)
-        result = "video/mp4";
-    else if (type == AdminModel::MediaType::image)
-        result = "image/jpeg";
-    else
-        throw std::logic_error("mime type handling");
-
-    return result;
+    return "video/mp4";
 }
+
 namespace detail
 {
 using rpc_sf = beltpp::socket_family_t<&http::message_list_load<&AdminModel::message_list_load>>;
@@ -68,8 +65,7 @@ public:
                         &AdminModel::Log::from_string,
                         &AdminModel::Log::to_string> log;
 
-    meshpp::map_loader<InternalModel::ProcessCheckMediaResult> pending_for_storage;
-    string processing_for_storage;
+    vector<InternalModel::ProcessMediaCheckResult> pending_for_storage;
 
     meshpp::private_key pv_key;
     wait_result wait_result_info;
@@ -86,8 +82,7 @@ public:
         , ptr_direct_stream(cloudy::construct_direct_stream(admin_peerid, *ptr_eh, channel))
         , library(fs_library)
         , log(fs_admin / "log.json")
-        , pending_for_storage("pending_for_storage", fs_admin, 10000, get_internal_putl())
-        , processing_for_storage()
+        , pending_for_storage()
         , pv_key(_pv_key)
     {
         ptr_eh->set_timer(event_timer_period);
@@ -116,21 +111,18 @@ public:
     {
         library.save();
         log.save();
-        pending_for_storage.save();
     }
 
     void commit() noexcept
     {
         library.commit();
         log.commit();
-        pending_for_storage.commit();
     }
 
     void discard() noexcept
     {
         library.discard();
         log.discard();
-        pending_for_storage.discard();
     }
 
     void clear()
@@ -139,112 +131,114 @@ public:
         log->log.clear();
     }
 
-    void store(InternalModel::ProcessCheckMediaResult&& pending_data)
+    void process_storage(InternalModel::ProcessMediaCheckResult&& pending_data)
     {
-        string path_string = join_path(pending_data.request.path).first;
+        string data = std::move(pending_data.data);
+        pending_data.data.clear();
 
-        if (path_string.empty())
-            throw std::logic_error("admin_server_internals::store: path_string.empty()");
-
-        bool inserted = pending_for_storage.insert(path_string, std::move(pending_data));
-        if (false == inserted)
-            throw std::logic_error("admin_server_internals::store: false == inserted");
-    }
-    pair<string, string> process_storage()
-    {
-        pair<string, string> result;
-        if (false == processing_for_storage.empty())
-            return result;
-
-        if (false == pending_for_storage.keys().empty())
+        if (pending_data.count &&
+            false == data.empty())
         {
-            auto processing = *pending_for_storage.keys().begin();
-
-            auto const& file = pending_for_storage.as_const().at(processing);
-
-            result = std::make_pair(file.data, mime_type(static_cast<AdminModel::MediaType>(file.request.type)));
-            processing_for_storage = processing;
+            StorageModel::StorageFile file;
+            file.data = std::move(data);
+            file.mime_type = mime_type<AdminModel::MediaTypeDescriptionVideoContainer>();
+            ptr_direct_stream->send(storage_peerid, packet(std::move(file)));
+            pending_for_storage.push_back(std::move(pending_data));
         }
+        else
+        {
+            if (pending_data.count != 0)
+                throw std::logic_error("process_storage: pending_data.count != 0");
+            //pending_data.count = 0;
 
-        return result;
+            bool found = false;
+            for (auto const& pending_item : pending_for_storage)
+            {
+                if (pending_item.path == pending_data.path)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (found)
+                pending_for_storage.push_back(std::move(pending_data));
+            else
+            {
+                process_check_done_wrapper(std::move(pending_data),
+                                           0,
+                                           string(),
+                                           string());
+            }
+        }
     }
 
     void process_storage_done(string const& uri,
                               string const& error_override)
     {
-        InternalModel::ProcessCheckMediaResult& result =
-                pending_for_storage.at(processing_for_storage);
+        do
+        {
+            auto&& progress_info = pending_for_storage.front();
+            process_check_done_wrapper(std::move(progress_info),
+                                       progress_info.count,
+                                       uri,
+                                       error_override);
 
-        process_check_done(std::move(result.request),
-                           result.count,
-                           uri,
-                           error_override);
-
-        pending_for_storage.erase(processing_for_storage);
-        processing_for_storage.clear();
+            pending_for_storage.erase(pending_for_storage.begin());
+        }
+        while (false == pending_for_storage.empty() &&
+               pending_for_storage.front().count == 0);
     }
 
-    void process_check_done(InternalModel::ProcessCheckMediaRequest&& progress_info,
-                            uint64_t count,
-                            string const& uri,
-                            string const& error_override)
+    void process_check_done_wrapper(InternalModel::ProcessMediaCheckResult&& progress_info,
+                                    uint64_t count,
+                                    string const& uri,
+                                    string const& error_override)
     {
-        auto ptr_description =
-                library.process_check_done(progress_info,
-                                           count,
+        auto path = progress_info.path;
+
+        bool final_progress_for_path =
+                library.process_check_done(std::move(progress_info),
                                            uri);
 
-        string sha256sum = library.process_index_retrieve_hash(progress_info.path);
-        if (sha256sum.empty())
-            throw std::logic_error("process_check_done: sha256sum.empty()");
+        if (final_progress_for_path)
+        {
+            string sha256sum = library.process_index_retrieve_hash(path);
+            if (sha256sum.empty())
+                throw std::logic_error("process_check_done_wrapper: sha256sum.empty()");
 
-        if (uri.empty() && count)
+            if (false == library.indexed(sha256sum))
+            {
+                AdminModel::CheckMediaProblem problem;
+                problem.path = path;
+                problem.reason = "was not able to detect any media type";
+                if (false == error_override.empty())
+                    problem.reason = error_override;
+                writeln_node(join_path(path).first + ": " + problem.reason);
+                log->log.push_back(packet(std::move(problem)));
+            }
+            {
+                AdminModel::CheckMediaResult done;
+                done.path = path;
+                writeln_node(join_path(path).first + ": done");
+                log->log.push_back(packet(std::move(done)));
+                library.process_index_done(path);
+            }
+        }
+        else if (uri.empty())
         {
             AdminModel::CheckMediaProblem problem;
-            problem.path = progress_info.path;
+            problem.path = path;
             problem.reason = "problem with storage";
             if (false == error_override.empty())
                 problem.reason = error_override;
 
+            writeln_node(join_path(path).first + ": " + problem.reason);
             log->log.push_back(packet(std::move(problem)));
-
-            for (auto const& type_item : ptr_description->types)
-            {
-                for (auto const& overlay : type_item.overlays)
-                {
-                    for (auto const& frame : overlay.second.sequence)
-                    {
-                        StorageModel::StorageFileDelete request;
-                        request.uri = frame.uri;
-                        ptr_direct_stream->send(storage_peerid, packet(std::move(request)));
-
-                        writeln_node("asking storage to delete: " + frame.uri);
-                    }
-                }
-            }
-            library.process_index_done(progress_info.path);
         }
-        else if (ptr_description &&
-                 ptr_description->types.empty())
+        else
         {
-            AdminModel::CheckMediaProblem problem;
-            problem.path = progress_info.path;
-            problem.reason = "was not able to detect any media type";
-            if (false == error_override.empty())
-                problem.reason = error_override;
-            log->log.push_back(packet(std::move(problem)));
-            library.process_index_done(progress_info.path);
-        }
-        else if (ptr_description &&
-                 false == ptr_description->types.empty())
-        {
-            AdminModel::CheckMediaResult success;
-            success.path = progress_info.path;
-            for (auto const& type_item : ptr_description->types)
-                success.mime_type.push_back(mime_type(type_item.type));
-            log->log.push_back(packet(std::move(success)));
-            library.add(std::move(*ptr_description), std::move(progress_info.path), sha256sum);
-            library.process_index_done(progress_info.path);
+            writeln_node(join_path(path).first + ": added " + uri);
         }
     }
 };
@@ -279,11 +273,11 @@ void admin_server::run(bool& stop_check)
 {
     stop_check = false;
 
-
     {
         auto paths = m_pimpl->library.process_index();
         for (auto&& path : paths)
         {
+            m_pimpl->writeln_node(join_path(path).first + " processing for index");
             InternalModel::ProcessIndexRequest request;
             request.path = std::move(path);
             m_pimpl->ptr_direct_stream->send(worker_peerid, packet(request));
@@ -292,16 +286,9 @@ void admin_server::run(bool& stop_check)
     {
         auto items = m_pimpl->library.process_check();
         for (auto&& item : items)
-            m_pimpl->ptr_direct_stream->send(worker_peerid, packet(std::move(item)));
-    }
-    {
-        auto data = m_pimpl->process_storage();
-        if (false == data.first.empty())
         {
-            StorageModel::StorageFile file;
-            file.data = std::move(data.first);
-            file.mime_type = std::move(data.second);
-            m_pimpl->ptr_direct_stream->send(storage_peerid, packet(std::move(file)));
+            m_pimpl->writeln_node(join_path(item.path).first + " processing for check");
+            m_pimpl->ptr_direct_stream->send(worker_peerid, packet(std::move(item)));
         }
     }
 
@@ -388,7 +375,6 @@ void admin_server::run(bool& stop_check)
             case LibraryPut::rtt:
             {
                 LibraryPut request;
-                LibraryResponse response;
 
                 std::move(received_packet).get(request);
 
@@ -402,7 +388,7 @@ void admin_server::run(bool& stop_check)
                 }
                 stream.send(peerid, packet(m_pimpl->library.list(request.path)));
 
-                stream.send(peerid, packet(response));
+                m_pimpl->writeln_node(join_path(request.path).first + " scheduling for index");
                 break;
             }
             case LogGet::rtt:
@@ -472,36 +458,37 @@ void admin_server::run(bool& stop_check)
             InternalModel::ProcessIndexResult request;
             received_packet.get(request);
 
+            m_pimpl->library.process_index_store_hash(request.path, request.sha256sum);
+
             if (m_pimpl->library.indexed(request.sha256sum))
             {
-                m_pimpl->library.add(MediaDescription(),
-                                     std::move(request.path),
-                                     request.sha256sum);
+                m_pimpl->writeln_node(join_path(request.path).first + ": with hash "  + request.sha256sum + " is already indexed");
+                InternalModel::ProcessMediaCheckResult dummy_progress_item;
+                dummy_progress_item.path = request.path;
+                m_pimpl->library.add(std::move(dummy_progress_item),
+                                     string());
                 m_pimpl->library.process_index_done(request.path);
             }
             else
             {
+                m_pimpl->writeln_node(join_path(request.path).first + ": with hash "  + request.sha256sum + " scheduling for check");
                 m_pimpl->library.process_index_store_hash(request.path, request.sha256sum);
-                m_pimpl->library.check(std::move(request.path));
+                if (false == m_pimpl->library.check(std::move(request.path)))
+                    m_pimpl->writeln_node("\tis already scheduled");
             }
 
             break;
         }
-        case InternalModel::ProcessCheckMediaResult::rtt:
+        case InternalModel::ProcessMediaCheckResult::rtt:
         {
-            InternalModel::ProcessCheckMediaResult request;
-            received_packet.get(request);
+            InternalModel::ProcessMediaCheckResult request;
+            std::move(received_packet).get(request);
 
             if (request.count && request.data.empty())
                 throw std::logic_error("request.count && request.data.empty()");
 
-            if (request.count)
-                m_pimpl->store(std::move(request));
-            else
-                m_pimpl->process_check_done(std::move(request.request),
-                                            0,
-                                            string(),
-                                            string());
+            m_pimpl->writeln_node(join_path(request.path).first + " got some checked data");
+            m_pimpl->process_storage(std::move(request));
 
             break;
         }
@@ -517,6 +504,7 @@ void admin_server::run(bool& stop_check)
 
                 m_pimpl->library.process_index_done(request.path);
 
+                m_pimpl->writeln_node(join_path(request.path).first + ": " + request.reason);
                 m_pimpl->log->log.push_back(std::move(received_packet));
             }
             break;
@@ -530,6 +518,8 @@ void admin_server::run(bool& stop_check)
             StorageModel::StorageFileAddress request;
             received_packet.get(request);
 
+            m_pimpl->writeln_node("storage got new data: " + request.uri);
+
             m_pimpl->process_storage_done(request.uri, string());
 
             break;
@@ -541,6 +531,8 @@ void admin_server::run(bool& stop_check)
 
             if (request.uri_problem_type != StorageModel::UriProblemType::duplicate)
                 throw std::logic_error("request.uri_problem_type != StorageModel::UriProblemType::duplicate");
+
+            m_pimpl->writeln_node("storage found a duplicate: " + request.uri);
 
             m_pimpl->process_storage_done(request.uri, string());
 
