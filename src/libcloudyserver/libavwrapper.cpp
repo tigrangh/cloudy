@@ -33,50 +33,196 @@ using std::pair;
 namespace libavwrapper
 {
 
+using packet_ptr = beltpp::t_unique_ptr<AVPacket>;
+packet_ptr packet_null()
+{
+    return packet_ptr(nullptr, [](AVPacket* p)
+    {
+        if (nullptr != p)
+            av_packet_free(&p);
+    });
+}
+packet_ptr packet_alloc()
+{
+    auto res = packet_null();
+    res.reset(av_packet_alloc());
+    return res;
+}
+void packet_unref(packet_ptr& ptr)
+{
+    av_packet_unref(ptr.get());
+}
+
+using frame_ptr = beltpp::t_unique_ptr<AVFrame>;
+frame_ptr frame_alloc()
+{
+    return frame_ptr(av_frame_alloc(), [](AVFrame* p)
+    {
+        if (nullptr != p)
+            av_frame_free(&p);
+    });
+}
+void frame_unref(frame_ptr& ptr)
+{
+    av_frame_unref(ptr.get());
+}
+
+using filter_graph_ptr = beltpp::t_unique_ptr<AVFilterGraph>;
+filter_graph_ptr filter_graph_null()
+{
+    return filter_graph_ptr(nullptr, [](AVFilterGraph* p)
+    {
+        if (nullptr != p)
+            avfilter_graph_free(&p);
+    });
+}
+filter_graph_ptr filter_graph_alloc()
+{
+    auto res = filter_graph_null();
+    res.reset(avfilter_graph_alloc());
+    return res;
+}
+
+using codec_ptr = beltpp::t_unique_ptr<AVCodec>;
+codec_ptr codec_null()
+{
+    return beltpp::t_unique_nullptr<AVCodec>();
+}
+codec_ptr codec_find_decoder(AVCodecID id)
+{
+    auto res = codec_null();
+    res.reset(avcodec_find_decoder(id));
+    return res;
+}
+codec_ptr codec_find_encoder(string const& name)
+{
+    auto res = codec_null();
+    res.reset(avcodec_find_encoder_by_name(name.c_str()));
+    return res;
+}
+
+using codec_context_ptr = beltpp::t_unique_ptr<AVCodecContext>;
+codec_context_ptr codec_context_null()
+{
+    return codec_context_ptr(nullptr, [](AVCodecContext* p)
+    {
+        if (nullptr != p)
+            avcodec_free_context(&p);
+    });
+}
+codec_context_ptr codec_context_alloc(codec_ptr& avcodec)
+{
+    auto res = codec_context_null();
+    res.reset(avcodec_alloc_context3(avcodec.get()));
+    return res;
+}
+
+using format_context_ptr = beltpp::t_unique_ptr<AVFormatContext>;
+format_context_ptr format_context_null()
+{
+    return format_context_ptr(nullptr, [](AVFormatContext* p)
+    {
+        if (nullptr != p)
+            avformat_free_context(p);
+    });
+}
+
+format_context_ptr format_context_alloc_output(string const& filepath)
+{
+    auto res = format_context_null();
+    AVFormatContext* p = nullptr;
+    avformat_alloc_output_context2(&p,
+                                   nullptr,
+                                   nullptr,
+                                   filepath.c_str());
+
+    res.reset(p);
+
+    return res;
+}
+format_context_ptr format_context_alloc_input(string const& filepath)
+{
+    auto res = format_context_ptr(nullptr, [](AVFormatContext* p)
+    {
+        if (nullptr != p)
+        {
+            avformat_close_input(&p);
+            avformat_free_context(p);
+        }
+    });
+
+    AVFormatContext* p = avformat_alloc_context();
+
+    if (nullptr != p &&
+        0 == avformat_open_input(&p, filepath.c_str(), nullptr, nullptr) &&
+        0 <= avformat_find_stream_info(p, nullptr))
+        res.reset(p);
+
+    return res;
+}
+
+using stream_ptr = beltpp::t_unique_ptr<AVStream>;
+stream_ptr stream_null()
+{
+    return beltpp::t_unique_nullptr<AVStream>();
+}
+stream_ptr stream_raw(AVStream* p)
+{
+    auto res = beltpp::t_unique_nullptr<AVStream>();
+    res.reset(p);
+    return res;
+}
+stream_ptr format_new_stream(format_context_ptr& fc)
+{
+    auto res = beltpp::t_unique_nullptr<AVStream>();
+    res.reset(avformat_new_stream(fc.get(), nullptr));
+    return res;
+}
+
 class CodecContextDefinition
 {
 public:
     int index;
-    AVCodec* avcodec;
-    AVStream* avstream;
-    AVCodecContext* avcodec_context;
+    codec_ptr avcodec;
+    stream_ptr avstream;
+    codec_context_ptr avcodec_context;
     AVMediaType avmedia_type;
 
     CodecContextDefinition()
-        : avcodec(nullptr)
-        , avstream(nullptr)
-        , avcodec_context(nullptr)
+        : avcodec(codec_null())
+        , avstream(stream_null())
+        , avcodec_context(codec_context_null())
         , avmedia_type(AVMEDIA_TYPE_UNKNOWN)
     {}
 
     bool fill_stream_info(AVStream& avstream_,
                           int index_)
     {
-        avstream = &avstream_;
+        avstream = stream_raw(&avstream_);
         index = index_;
         avmedia_type = avstream_.codecpar->codec_type;
 
-        avcodec = avcodec_find_decoder(avstream_.codecpar->codec_id);
+        avcodec = codec_find_decoder(avstream_.codecpar->codec_id);
         if (nullptr == avcodec)
         {
             //logging("failed to find the codec");
             return false;
         }
 
-        avcodec_context = avcodec_alloc_context3(avcodec);
+        avcodec_context = codec_context_alloc(avcodec);
         if (nullptr == avcodec_context)
         {
             //logging("failed to alloc memory for codec context");
             return false;
         }
 
-        if (avcodec_parameters_to_context(avcodec_context, avstream_.codecpar) < 0)
+        if (avcodec_parameters_to_context(avcodec_context.get(), avstream_.codecpar) < 0)
         {
             //logging("failed to fill codec context");
             return false;
         }
 
-        if (avcodec_open2(avcodec_context, avcodec, NULL) < 0)
+        if (0 > avcodec_open2(avcodec_context.get(), avcodec.get(), nullptr))
         {
             //logging("failed to open codec");
             return false;
@@ -98,7 +244,7 @@ public:
 
     AVFilterContext* filter_context_source = nullptr;
     AVFilterContext* filter_context_sink = nullptr;
-    AVFilterGraph* filter_graph = nullptr;
+    filter_graph_ptr filter_graph = filter_graph_null();
 
     // desired output stream properties
     int width = 0;
@@ -117,7 +263,7 @@ public:
     bool create_avcodec(string const& codec_name)
     {
         assert(false == codec_name.empty());
-        avcodec = avcodec_find_encoder_by_name(codec_name.c_str());
+        avcodec = codec_find_encoder(codec_name);
         if (nullptr == avcodec)
         {
             //logging("could not find the proper codec");
@@ -179,11 +325,11 @@ public:
         }
     }
 
-    bool prepare(AVFormatContext* avformat_context,
+    bool prepare(format_context_ptr& avformat_context,
                  AVRational input_framerate,
                  DecoderCodecContextDefinition const& decoder)
     {
-        avstream = avformat_new_stream(avformat_context, NULL);
+        avstream = format_new_stream(avformat_context);
 
         index = decoder.index;
         avmedia_type = decoder.avmedia_type;
@@ -201,7 +347,7 @@ public:
         if (false == create_avcodec(transcode_options->codec))
             return false;
 
-        avcodec_context = avcodec_alloc_context3(avcodec);
+        avcodec_context = codec_context_alloc(avcodec);
         if (nullptr == avcodec_context)
         {
             //logging("could not allocate memory for codec context");
@@ -210,15 +356,15 @@ public:
 
         avcodec_context_init(*transcode_options, decoder, input_framerate);
 
-        if (0 > avcodec_open2(avcodec_context, avcodec, NULL))
+        if (0 > avcodec_open2(avcodec_context.get(), avcodec.get(), nullptr))
         {
             //logging("could not open the codec");
             return false;
         }
-        avcodec_parameters_from_context(avstream->codecpar, avcodec_context);
+        avcodec_parameters_from_context(avstream->codecpar, avcodec_context.get());
 
         {
-            filter_graph = avfilter_graph_alloc();
+            filter_graph = filter_graph_alloc();
 
             int count;
             if (avmedia_type == AVMEDIA_TYPE_VIDEO)
@@ -280,7 +426,7 @@ public:
                                                          buffer_name.c_str(),
                                                          buffer_arguments.c_str(),
                                                          nullptr,
-                                                         filter_graph))
+                                                         filter_graph.get()))
                         return false;
                 }
 
@@ -294,7 +440,7 @@ public:
                                                          scale_name.c_str(),
                                                          scale_arguments.c_str(),
                                                          nullptr,
-                                                         filter_graph))
+                                                         filter_graph.get()))
                         return false;
                 }
 
@@ -310,7 +456,7 @@ public:
                                                          framerate_name.c_str(),
                                                          framerate_arguments.c_str(),
                                                          nullptr,
-                                                         filter_graph))
+                                                         filter_graph.get()))
                         return false;
                 }
 
@@ -322,7 +468,7 @@ public:
                                                          sink_name.c_str(),
                                                          NULL,
                                                          NULL,
-                                                         filter_graph))
+                                                         filter_graph.get()))
                         return false;
                 }
 
@@ -368,7 +514,7 @@ public:
                         filter_context_source = current;
                 }
 
-                if (0 > avfilter_graph_config(filter_graph, nullptr))
+                if (0 > avfilter_graph_config(filter_graph.get(), nullptr))
                     return false;
             }
             else if (avmedia_type == AVMEDIA_TYPE_AUDIO)
@@ -428,7 +574,7 @@ public:
                                                          buffer_name.c_str(),
                                                          buffer_argument.c_str(),
                                                          nullptr,
-                                                         filter_graph))
+                                                         filter_graph.get()))
                         return false;
                 }
                 {
@@ -497,7 +643,7 @@ public:
                                                          format_name.c_str(),
                                                          format_argument.c_str(),
                                                          nullptr,
-                                                         filter_graph))
+                                                         filter_graph.get()))
                         return false;
                 }
 
@@ -509,7 +655,7 @@ public:
                                                          sink_name.c_str(),
                                                          NULL,
                                                          NULL,
-                                                         filter_graph))
+                                                         filter_graph.get()))
                         return false;
                 }
                 AVFilterContext* current = nullptr;
@@ -544,7 +690,7 @@ public:
                         filter_context_source = current;
                 }
 
-                if (0 > avfilter_graph_config(filter_graph, nullptr))
+                if (0 > avfilter_graph_config(filter_graph.get(), nullptr))
                     return false;
 
             }
@@ -558,11 +704,11 @@ template <typename TCodecContextDefinition>
 class Context
 {
 public:
-    AVFormatContext* avformat_context;
+    format_context_ptr avformat_context;
     vector<TCodecContextDefinition> definitions;
 
     Context()
-        : avformat_context(nullptr)
+        : avformat_context(format_context_null())
     {}
 
     bool codec_context_definition_by_stream(int index,
@@ -584,25 +730,22 @@ public:
 class Input
 {
 public:
+    Input() = default;
+    Input(Input const&) = delete;
+    Input(Input&&) = default;
+
     bool more = false;
-    AVPacket* input_packet = nullptr;
-    vector<AVFrame*> input_frames;
+    packet_ptr packet = packet_null();
+    vector<frame_ptr> frames;
     int stream_index;
 
     ~Input()
     {
-        for (auto& input_frame : input_frames)
-        {
-            av_frame_unref(input_frame);
-            av_frame_free(&input_frame);
-            input_frame = nullptr;
-        }
+        for (auto& frame : frames)
+            frame_unref(frame);
 
-        if (nullptr != input_packet)
-        {
-            av_packet_free(&input_packet);
-            input_packet = nullptr;
-        }
+        if (packet)
+            packet_unref(packet);
     }
 };
 
@@ -625,7 +768,7 @@ public:
 class DecoderContext : public Context<DecoderCodecContextDefinition>
 {
 public:
-    string filepath;
+    //string filepath;
 
     bool load(string const& path);
     std::pair<bool, Input> next(vector<EncoderContext>& encoder_contexts);
@@ -659,22 +802,10 @@ protected:
 
 bool DecoderContext::load(string const& path)
 {
-    avformat_context = avformat_alloc_context();
+    avformat_context = format_context_alloc_input(path);
     if (nullptr == avformat_context)
     {
-        //logging("failed to alloc memory for format");
-        return false;
-    }
-
-    if (0 != avformat_open_input(&avformat_context, path.c_str(), NULL, NULL))
-    {
-        //logging("failed to open input file %s", in_filename);
-        return false;
-    }
-
-    if (0 > avformat_find_stream_info(avformat_context, NULL))
-    {
-        //logging("failed to get stream info");
+        //logging("failed to init format context");
         return false;
     }
 
@@ -691,16 +822,14 @@ std::pair<bool, Input> DecoderContext::next(vector<EncoderContext>& encoder_cont
     std::pair<bool, Input> result;
     result.first = false;
 
-    AVPacket* input_packet;
-
-    input_packet = av_packet_alloc();
+    packet_ptr input_packet = packet_alloc();
     if (nullptr == input_packet)
     {
         //logging("failed to allocate memory for AVPacket");
         return result;
     }
 
-    while (av_read_frame(avformat_context, input_packet) >= 0)
+    while (av_read_frame(avformat_context.get(), input_packet.get()) >= 0)
     {
         result.second.stream_index = input_packet->stream_index;
 
@@ -729,19 +858,21 @@ std::pair<bool, Input> DecoderContext::next(vector<EncoderContext>& encoder_cont
                 {
                     input_frames_done = true;
 
-                    int response = avcodec_send_packet(decoder.avcodec_context, input_packet);
+                    int response = avcodec_send_packet(decoder.avcodec_context.get(),
+                                                       input_packet.get());
                     if (response < 0)
                     {
                         //logging("Error while sending packet to decoder: %s", av_err2str(response));
                         return result;
                     }
 
-                    AVFrame* input_frame = nullptr;
+                    frame_ptr input_frame = frame_alloc();
 
                     while (response >= 0)
                     {
                         if (nullptr == input_frame)
-                            input_frame = av_frame_alloc();
+                            input_frame = frame_alloc();
+
                         if (nullptr == input_frame)
                         {
                             //logging("failed to allocate memory for AVFrame");
@@ -749,7 +880,8 @@ std::pair<bool, Input> DecoderContext::next(vector<EncoderContext>& encoder_cont
                         }
                         else
                         {
-                            response = avcodec_receive_frame(decoder.avcodec_context, input_frame);
+                            response = avcodec_receive_frame(decoder.avcodec_context.get(),
+                                                             input_frame.get());
                             if (response == AVERROR(EAGAIN) ||
                                 response == AVERROR_EOF)
                                 break;
@@ -760,8 +892,7 @@ std::pair<bool, Input> DecoderContext::next(vector<EncoderContext>& encoder_cont
                             }
                             else
                             {
-                                result.second.input_frames.push_back(input_frame);
-                                input_frame = nullptr;
+                                result.second.frames.push_back(std::move(input_frame));
                             }
                         }
                     }
@@ -770,12 +901,10 @@ std::pair<bool, Input> DecoderContext::next(vector<EncoderContext>& encoder_cont
         }
 
         if (input_packet_done)
-        {
-            result.second.input_packet = input_packet;
-            input_packet = nullptr;
-        }
-        if (result.second.input_frames.size() ||
-            result.second.input_packet)
+            result.second.packet = std::move(input_packet);
+
+        if (result.second.frames.size() ||
+            result.second.packet)
         {
             result.first = true;
             result.second.more = true;
@@ -800,9 +929,9 @@ bool EncoderContext::load(packet&& options,
         EncoderCodecContextDefinition encoder;
 
         //  input_framerate is relevant only for (decoder.avmedia_type == AVMEDIA_TYPE_VIDEO)
-        AVRational input_framerate = av_guess_frame_rate(decoder_context.avformat_context,
-                                                         decoder.avstream,
-                                                         NULL);
+        AVRational input_framerate = av_guess_frame_rate(decoder_context.avformat_context.get(),
+                                                         decoder.avstream.get(),
+                                                         nullptr);
 
         packet* option = nullptr;
         if (decoder.avmedia_type == AVMEDIA_TYPE_VIDEO)
@@ -844,7 +973,8 @@ bool EncoderContext::load(packet&& options,
                     0);
     }
 
-    if (0 > avformat_write_header(avformat_context, &muxer_opts))
+    if (0 > avformat_write_header(avformat_context.get(),
+                                  &muxer_opts))
     {
         //logging("an error occurred when opening output file");
         return false;
@@ -855,7 +985,7 @@ bool EncoderContext::load(packet&& options,
 bool EncoderContext::process(DecoderContext& decoder_context,
                              Input& input)
 {
-    AVFrame* filter_frame = av_frame_alloc();
+    frame_ptr filter_frame = frame_alloc();
     if (nullptr == filter_frame)
     {
         //logging("failed to allocate memory for AVFrame");
@@ -863,7 +993,7 @@ bool EncoderContext::process(DecoderContext& decoder_context,
     }
 
     bool flush = false;
-    if (input.input_frames.empty() && nullptr == input.input_packet)
+    if (input.frames.empty() && nullptr == input.packet)
         flush = true;
 
     for (auto& encoder : definitions)
@@ -881,35 +1011,35 @@ bool EncoderContext::process(DecoderContext& decoder_context,
 
         if (encoder.options.transcode.empty())
         {
-            if (input.input_packet)
+            if (input.packet)
             {
-                AVPacket* output_packet = av_packet_alloc();
+                packet_ptr output_packet = packet_alloc();
                 if (nullptr == output_packet)
                 {
                     //logging("failed to allocate memory for AVPacket");
                     return false;
                 }
-                av_init_packet(output_packet);
-                av_packet_ref(output_packet, input.input_packet);
+                av_init_packet(output_packet.get());
+                av_packet_ref(output_packet.get(), input.packet.get());
 
-                av_packet_rescale_ts(output_packet,
+                av_packet_rescale_ts(output_packet.get(),
                                      decoder.avstream->time_base,
                                      encoder.avstream->time_base);
                 int response;
-                response = av_interleaved_write_frame(avformat_context, output_packet);
+                response = av_interleaved_write_frame(avformat_context.get(),
+                                                      output_packet.get());
                 if (response != 0)
                 {
                     //logging("error while copying stream packet");
                     return false;
                 }
-                //av_packet_free(&input_packet_ref);
-                //input_packet_ref = nullptr;
             }
         }
         else
         {
-            auto* pinput_frames = &input.input_frames;
-            vector<AVFrame*> for_flush{nullptr};
+            auto* pinput_frames = &input.frames;
+            vector<frame_ptr> for_flush;
+            for_flush.push_back(beltpp::t_unique_nullptr<AVFrame>());
             if (flush)
                 pinput_frames = &for_flush;
 
@@ -923,7 +1053,9 @@ bool EncoderContext::process(DecoderContext& decoder_context,
                     encoder.filter_context_source)
                 {
                     //  video example shows AV_BUFFERSRC_FLAG_KEEP_REF instead of 0 below
-                    if (0 > av_buffersrc_add_frame_flags(encoder.filter_context_source, input_frame, AV_BUFFERSRC_FLAG_KEEP_REF))
+                    if (0 > av_buffersrc_add_frame_flags(encoder.filter_context_source,
+                                                         input_frame.get(),
+                                                         0))
                     {
                         //av_log(NULL, AV_LOG_ERROR, "Error while feeding the audio filtergraph\n");
                         return false;
@@ -932,21 +1064,21 @@ bool EncoderContext::process(DecoderContext& decoder_context,
                     int response;
                     while (true)
                     {
-                        response = av_buffersink_get_frame(encoder.filter_context_sink, filter_frame);
+                        response = av_buffersink_get_frame(encoder.filter_context_sink,
+                                                           filter_frame.get());
                         if (response == AVERROR(EAGAIN) ||
                             response == AVERROR_EOF)
                             break;
                         else if (response < 0)
                             return false;
-                        //print_frame(filt_frame);
-                        av_frame_unref(input_frame);
-                        av_frame_ref(input_frame, filter_frame);
-                        av_frame_unref(filter_frame);
+
+                        frame_unref(input_frame);
+                        input_frame = std::move(filter_frame);
                     }
                 }
                 //  avfilter processing done
 
-                AVPacket* output_packet = av_packet_alloc();
+                packet_ptr output_packet = packet_alloc();
                 if (nullptr == output_packet)
                 {
                     //logging("could not allocate memory for output packet");
@@ -954,11 +1086,13 @@ bool EncoderContext::process(DecoderContext& decoder_context,
                 }
 
                 //  encode the frame
-                int response = avcodec_send_frame(encoder.avcodec_context, input_frame);
+                int response = avcodec_send_frame(encoder.avcodec_context.get(),
+                                                  input_frame.get());
 
                 while (response >= 0)
                 {
-                    response = avcodec_receive_packet(encoder.avcodec_context, output_packet);
+                    response = avcodec_receive_packet(encoder.avcodec_context.get(),
+                                                      output_packet.get());
                     if (response == AVERROR(EAGAIN) ||
                         response == AVERROR_EOF)
                         break;
@@ -975,31 +1109,28 @@ bool EncoderContext::process(DecoderContext& decoder_context,
                                                   decoder.avstream->avg_frame_rate.num *
                                                   decoder.avstream->avg_frame_rate.den;
 
-                    av_packet_rescale_ts(output_packet,
+                    av_packet_rescale_ts(output_packet.get(),
                                          decoder.avstream->time_base,
                                          encoder.avstream->time_base);
-                    response = av_interleaved_write_frame(avformat_context, output_packet);
+                    response = av_interleaved_write_frame(avformat_context.get(),
+                                                          output_packet.get());
                     if (response != 0)
                     {
                         //logging("Error %d while receiving packet from decoder: %s", response, av_err2str(response));
                         return false;
                     }
                 }
-                av_packet_unref(output_packet);
-                av_packet_free(&output_packet);
+                packet_unref(output_packet);
             }
         }
 
         if (flush)
-        {
-            avcodec_free_context(&encoder.avcodec_context);
-            encoder.avcodec_context = nullptr;
-        }
+            encoder.avcodec_context.reset();
     }
 
     if (flush)
     {
-        av_write_trailer(avformat_context);
+        av_write_trailer(avformat_context.get());
 
         if (muxer_opts != nullptr)
         {
@@ -1007,12 +1138,8 @@ bool EncoderContext::process(DecoderContext& decoder_context,
             muxer_opts = nullptr;
         }
 
-        avformat_free_context(avformat_context);
-        avformat_context = nullptr;
+        avformat_context.reset();
     }
-
-    if (filter_frame)
-        av_frame_free(&filter_frame);
 
     return true;
 }
@@ -1042,10 +1169,7 @@ bool transcoder::init(vector<packet>&& options)
         EncoderContext encoder_context;
         //encoder_context.filepath = to + meshpp::to_base64(option.to_string(), false) + ".mp4";
         encoder_context.filepath = to + std::to_string(option_index) + ".mp4";
-        avformat_alloc_output_context2(&encoder_context.avformat_context,
-                                       NULL,
-                                       NULL,
-                                       encoder_context.filepath.c_str());
+        encoder_context.avformat_context = format_context_alloc_output(encoder_context.filepath);
         if (nullptr == encoder_context.avformat_context)
         {
             //logging("could not allocate memory for output format");
@@ -1094,16 +1218,10 @@ bool transcoder::loop(size_t& count)
 
 bool transcoder::clean()
 {
-    avformat_close_input(&pimpl->decoder.avformat_context);
-
-    avformat_free_context(pimpl->decoder.avformat_context);
-    pimpl->decoder.avformat_context = nullptr;
+    pimpl->decoder.avformat_context.reset();
 
     for (auto& decoder : pimpl->decoder.definitions)
-    {
-        avcodec_free_context(&decoder.avcodec_context);
-        decoder.avcodec_context = NULL;
-    }
+        decoder.avcodec_context.reset();
 
     return true;
 }
