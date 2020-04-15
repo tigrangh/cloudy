@@ -19,10 +19,12 @@ class storage_internals;
 class storage
 {
 public:
-    storage(boost::filesystem::path const& fs_storage);
+    storage(boost::filesystem::path const& path,
+            boost::filesystem::path const& path_binaries);
     ~storage();
 
     bool put(StorageModel::StorageFile&& file, std::string& uri);
+    bool put_file(StorageModel::StorageFile&& file, std::string& uri);
     bool get(std::string const& uri, StorageModel::StorageFile& file);
     bool remove(std::string const& uri);
     std::unordered_set<std::string> get_file_uris() const;

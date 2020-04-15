@@ -3,9 +3,12 @@
 
 #include <belt.pp/packet.hpp>
 
+#include <boost/filesystem/path.hpp>
+
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 namespace libavwrapper
 {
@@ -19,15 +22,15 @@ private:
     e_state state = before_init;
     std::unique_ptr<transcoder_detail> pimpl;
 
-    bool loop(size_t& count);
+    bool loop(std::unordered_map<std::string, std::string>& filename_to_type_definition);
     bool clean();
 public:
     transcoder();
     ~transcoder();
-    std::string from;
-    std::string to;
+    boost::filesystem::path input_file;
+    boost::filesystem::path output_dir;
 
     bool init(std::vector<beltpp::packet>&& options);
-    size_t run();
+    void run(std::unordered_map<std::string, std::string>& filename_to_type_definition);
 };
 }

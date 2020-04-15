@@ -12,7 +12,7 @@
 #include <mesh.pp/fileutility.hpp>
 #include <mesh.pp/cryptoutility.hpp>
 
-#include <boost/filesystem.hpp>
+#include <boost/filesystem/path.hpp>
 
 #include <string>
 #include <memory>
@@ -21,8 +21,6 @@
 #include <unordered_map>
 #include <utility>
 #include <exception>
-#include <mutex>
-#include <thread>
 
 using namespace InternalModel;
 
@@ -34,6 +32,7 @@ using chrono::system_clock;
 
 using std::string;
 using std::unordered_set;
+using std::unordered_map;
 using std::unique_ptr;
 using std::vector;
 
@@ -44,18 +43,6 @@ namespace cloudy
 
 namespace detail
 {
-filesystem::path check_path(vector<string> const& path)
-{
-    filesystem::path fs_path("/");
-    for (auto const& name : path)
-    {
-        if (name == "." || name == "..")
-            throw std::runtime_error("self or parent directories are not supported");
-        fs_path /= name;
-    }
-
-    return fs_path;
-}
 
 void processor_worker(packet&& package, beltpp::libprocessor::async_result& stream)
 {
@@ -71,12 +58,12 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
         try
         {
             std::istreambuf_iterator<char> end, begin;
-            boost::filesystem::ifstream fl;
-            boost::filesystem::path path(check_path(request.path));
+            filesystem::ifstream fl;
+            filesystem::path path(check_path(request.path).first);
 
             meshpp::load_file(path, fl, begin, end);
             if (begin == end)
-                throw std::runtime_error("no such file");
+                throw std::runtime_error(path.string() + ": empty or does not exist, cannot index");
 
             InternalModel::ProcessIndexResult response;
             response.path = request.path;
@@ -107,20 +94,16 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
         {
             std::move(package).get(request);
 
-
             libavwrapper::transcoder transcoder;
-            transcoder.from = join_path(request.path).first;
-            transcoder.to = "/home/tigran/sb.2.mp4";
+            transcoder.input_file = check_path(request.path).first;
+            transcoder.output_dir = request.output_dir;
 
             vector<packet> options;
-            string type_definition_str_last;
-            for (auto& type_definition_str : request.media_definition_check.types_definitions)
+            for (auto& type_definition_str : request.types_definitions)
             {
                 packet type_definition;
                 AdminModel::detail::loader(type_definition, type_definition_str, nullptr);
                 options.push_back(std::move(type_definition));
-
-                type_definition_str_last = type_definition_str;
             }
 
             transcoder.init(std::move(options));
@@ -128,24 +111,40 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
             size_t count = 0;
             do
             {
-                count = transcoder.run();
+                unordered_map<string, string> filename_to_type_definition;
+                transcoder.run(filename_to_type_definition);
 
-                InternalModel::ProcessMediaCheckResult response;
+                if (false == filename_to_type_definition.empty())
+                {
+                    count = 1;
+                    for (auto const& ftod : filename_to_type_definition)
+                    {
+                        InternalModel::ProcessMediaCheckResult response;
 
-                response.path = request.path;
-                response.count = count;
-                response.accumulated = accumulate_count;
+                        response.path = request.path;
+                        response.count = count;
+                        response.accumulated = accumulate_count;
 
-                AdminModel::detail::loader(response.type, type_definition_str_last, nullptr);
+                        AdminModel::detail::loader(response.type, ftod.second, nullptr);
 
-                if (response.count)
-                    response.data = response.type.to_string() +
-                                    ", accumulated: " + std::to_string(accumulate_count) +
-                                    ", count: " + std::to_string(count);
+                        response.result_type = InternalModel::ResultType::file;
+                        response.data_or_file = ftod.first;
 
-                accumulate_count += response.count;
 
-                stream.send(packet(std::move(response)));
+                        stream.send(packet(std::move(response)));
+                    }
+                }
+                else
+                {
+                    count = 0;
+
+                    InternalModel::ProcessMediaCheckResult response;
+                    response.path = request.path;
+
+                    stream.send(packet(std::move(response)));
+                }
+
+                accumulate_count += count;
             }
             while (count);
         }
@@ -154,7 +153,7 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
             InternalModel::ProcessMediaCheckResult response;
             response.path = request.path;
 
-            stream.send(packet(response));
+            stream.send(packet(std::move(response)));
         }
 
         break;
@@ -179,14 +178,17 @@ public:
     event_handler_ptr ptr_eh;
     stream_ptr ptr_stream;
     stream_ptr ptr_direct_stream;
+    filesystem::path fs;
     wait_result wait_result_info;
 
     worker_internals(beltpp::ilog* _plogger,
+                     filesystem::path const& _fs,
                      direct_channel& channel)
         : plogger(_plogger)
         , ptr_eh(beltpp::libprocessor::construct_event_handler())
         , ptr_stream(construct_processor_wrap(*ptr_eh, 2, &processor_worker))
         , ptr_direct_stream(cloudy::construct_direct_stream(worker_peerid, *ptr_eh, channel))
+        , fs(_fs)
     {
         //ptr_eh->set_timer(event_timer_period);
     }
@@ -209,8 +211,10 @@ public:
  * worker
  */
 worker::worker(beltpp::ilog* plogger,
+               filesystem::path const& fs,
                direct_channel& channel)
     : m_pimpl(new detail::worker_internals(plogger,
+                                           fs,
                                            channel))
 {}
 worker::worker(worker&&) noexcept = default;
@@ -279,6 +283,12 @@ void worker::run(bool& stop)
                  received_packet.type() != beltpp::stream_drop::rtt)
                 )
             {
+                if (received_packet.type() == InternalModel::ProcessMediaCheckRequest::rtt)
+                {
+                    InternalModel::ProcessMediaCheckRequest* p;
+                    received_packet.get(p);
+                    p->output_dir = m_pimpl->fs.string();
+                }
                 m_pimpl->ptr_stream->send(string(), std::move(received_packet));
             }
         }

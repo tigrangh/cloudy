@@ -126,8 +126,10 @@ int main(int argc, char** argv)
 
         auto fs_log = meshpp::data_directory_path("log");
         auto fs_storage = meshpp::data_directory_path("storage");
+        auto fs_storage_binaries = meshpp::data_directory_path("storage_binaries");
         auto fs_library = meshpp::data_directory_path("library");
         auto fs_admin = meshpp::data_directory_path("admin");
+        auto fs_worker = meshpp::data_directory_path("worker");
 
         cout << "admin bind address: " << admin_bind_to_address.to_string() << endl;
         cout << "storage bind address: " << storage_bind_to_address.to_string() << endl;
@@ -158,12 +160,14 @@ int main(int argc, char** argv)
 
         cloudy::storage_server storage(storage_bind_to_address,
                                        fs_storage,
+                                       fs_storage_binaries,
                                        pv_key.get_public_key(),
                                        plogger_storage.get(),
                                        direct_channel);
         g_storage = &storage;
 
         cloudy::worker worker(plogger_worker.get(),
+                              fs_worker,
                               direct_channel);
         g_worker = &worker;
 

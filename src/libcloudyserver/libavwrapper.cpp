@@ -3,6 +3,8 @@
 
 #include <mesh.pp/cryptoutility.hpp>
 
+#include <boost/filesystem/path.hpp>
+
 #define __STDC_CONSTANT_MACROS
 
 extern "C"
@@ -22,13 +24,13 @@ extern "C"
 }
 
 #include <cassert>
-#include <iostream>
 #include <utility>
 
 using std::string;
 using beltpp::packet;
 using std::vector;
 using std::pair;
+using std::unordered_map;
 
 namespace libavwrapper
 {
@@ -311,7 +313,7 @@ public:
             else
                 avcodec_context->pix_fmt = decoder.avcodec_context->pix_fmt;
 
-            avcodec_context->bit_rate = 2 * 1000 * 1000;
+            //avcodec_context->bit_rate = 2 * 1000 * 1000;
             avcodec_context->rc_buffer_size = 4 * 1000 * 1000;
             avcodec_context->rc_max_rate = 2 * 1000 * 1000;
             avcodec_context->rc_min_rate = 2.5 * 1000 * 1000;
@@ -319,8 +321,8 @@ public:
             avcodec_context->time_base = av_inv_q(input_framerate);
             avstream->time_base = avcodec_context->time_base;
             //
-            avcodec_context->width = 1280;
-            avcodec_context->height = 720;
+            avcodec_context->width = 800;
+            avcodec_context->height = 480;
             //avcodec_context->framerate = {1, 30};
         }
     }
@@ -466,8 +468,8 @@ public:
                     if (0 > avfilter_graph_create_filter(&filter_context_sink,
                                                          avfilter_get_by_name("buffersink"),
                                                          sink_name.c_str(),
-                                                         NULL,
-                                                         NULL,
+                                                         nullptr,
+                                                         nullptr,
                                                          filter_graph.get()))
                         return false;
                 }
@@ -653,8 +655,8 @@ public:
                     if (0 > avfilter_graph_create_filter(&filter_context_sink,
                                                          avfilter_get_by_name("abuffersink"),
                                                          sink_name.c_str(),
-                                                         NULL,
-                                                         NULL,
+                                                         nullptr,
+                                                         nullptr,
                                                          filter_graph.get()))
                         return false;
                 }
@@ -754,6 +756,7 @@ class EncoderContext : public Context<EncoderCodecContextDefinition>
 {
 public:
     string filepath;
+    string type_definition_str;
     AVDictionary* muxer_opts = nullptr;
 
     AVFilterGraph *graph;
@@ -1057,7 +1060,7 @@ bool EncoderContext::process(DecoderContext& decoder_context,
                                                          input_frame.get(),
                                                          0))
                     {
-                        //av_log(NULL, AV_LOG_ERROR, "Error while feeding the audio filtergraph\n");
+                        //av_log(nullptr, AV_LOG_ERROR, "Error while feeding the audio filtergraph\n");
                         return false;
                     }
                     /* pull filtered audio from the filtergraph */
@@ -1158,7 +1161,7 @@ transcoder::~transcoder() = default;
 
 bool transcoder::init(vector<packet>&& options)
 {
-    if (false == pimpl->decoder.load(from))
+    if (false == pimpl->decoder.load(input_file.string()))
         return false;
 
     size_t option_index = 0;
@@ -1167,8 +1170,8 @@ bool transcoder::init(vector<packet>&& options)
         ++option_index;
 
         EncoderContext encoder_context;
-        //encoder_context.filepath = to + meshpp::to_base64(option.to_string(), false) + ".mp4";
-        encoder_context.filepath = to + std::to_string(option_index) + ".mp4";
+        encoder_context.filepath = (output_dir / (std::to_string(pimpl->encoders.size()) + ".mp4")).string();
+        encoder_context.type_definition_str = option.to_string();
         encoder_context.avformat_context = format_context_alloc_output(encoder_context.filepath);
         if (nullptr == encoder_context.avformat_context)
         {
@@ -1188,31 +1191,28 @@ bool transcoder::init(vector<packet>&& options)
     return true;
 }
 
-bool transcoder::loop(size_t& count)
+bool transcoder::loop(unordered_map<string, string>& filename_to_type_definition)
 {
-    count = 0;
-    size_t count_temp = 0;
-
+    filename_to_type_definition.clear();
     while (true)
-    {
+    {   //  for now this will not actually do chunk by chunk encoding
         auto input = pimpl->decoder.next(pimpl->encoders);
         if (false == input.first)
             return false;
-
-        ++count_temp;
 
         for (auto& encoder_context : pimpl->encoders)
         {
             if (false == encoder_context.process(pimpl->decoder,
                                                  input.second))
                 return false;
+
+            filename_to_type_definition[encoder_context.filepath] = encoder_context.type_definition_str;
         }
 
         if (false == input.second.more)
             break;
     }
 
-    count = count_temp;
     return true;
 }
 
@@ -1226,18 +1226,14 @@ bool transcoder::clean()
     return true;
 }
 
-size_t transcoder::run()
+void transcoder::run(unordered_map<string, string>& filename_to_type_definition)
 {
-    size_t count = 0;
-
     if (before_loop == state &&
-        loop(count))
+        loop(filename_to_type_definition))
     {
         state = done;
     }
     else if (done == state)
         clean();
-
-    return count;
 }
 }

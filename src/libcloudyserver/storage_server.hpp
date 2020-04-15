@@ -23,7 +23,8 @@ class CLOUDYSERVERSHARED_EXPORT storage_server
 {
 public:
     storage_server(beltpp::ip_address const& bind_to_address,
-                   boost::filesystem::path const& fs_storage,
+                   boost::filesystem::path const& path,
+                   boost::filesystem::path const& path_binaries,
                    meshpp::public_key const& pb_key,
                    beltpp::ilog* plogger,
                    direct_channel& channel);

@@ -38,6 +38,8 @@ using std::list;
 using std::unordered_set;
 using std::unique_ptr;
 
+namespace filesystem = boost::filesystem;
+
 namespace cloudy
 {
 
@@ -60,7 +62,8 @@ public:
     wait_result wait_result_info;
 
     storage_server_internals(beltpp::ip_address const& bind_to_address,
-                             boost::filesystem::path const& fs_storage,
+                             filesystem::path const& path,
+                             filesystem::path const& path_binaries,
                              meshpp::public_key const& _pb_key,
                              beltpp::ilog* _plogger,
                              direct_channel& channel)
@@ -68,7 +71,7 @@ public:
         , ptr_eh(beltpp::libsocket::construct_event_handler())
         , ptr_socket(beltpp::libsocket::getsocket<rpc_storage_sf>(*ptr_eh))
         , ptr_direct_stream(cloudy::construct_direct_stream(storage_peerid, *ptr_eh, channel))
-        , m_storage(fs_storage)
+        , m_storage(path, path_binaries)
         , pb_key(_pb_key)
     {
         ptr_eh->set_timer(event_timer_period);
@@ -99,12 +102,14 @@ public:
  * storage_server
  */
 storage_server::storage_server(beltpp::ip_address const& bind_to_address,
-                               boost::filesystem::path const& fs_storage,
+                               filesystem::path const& path,
+                               filesystem::path const& path_binaries,
                                meshpp::public_key const& pb_key,
                                beltpp::ilog* plogger,
                                direct_channel& channel)
     : m_pimpl(new detail::storage_server_internals(bind_to_address,
-                                                   fs_storage,
+                                                   path,
+                                                   path_binaries,
                                                    pb_key,
                                                    plogger,
                                                    channel))
@@ -279,6 +284,33 @@ void storage_server::run(bool& stop)
 
                 string uri;
                 if (m_pimpl->m_storage.put(std::move(storage_file), uri))
+                {
+                    StorageFileAddress file_address;
+                    file_address.uri = uri;
+
+                    stream.send(peerid, packet(std::move(file_address)));
+                }
+                else
+                {
+                    UriError msg;
+                    msg.uri = uri;
+                    msg.uri_problem_type = UriProblemType::duplicate;
+
+                    stream.send(peerid, packet(std::move(msg)));
+                }
+                break;
+            }
+            case StorageFileAdd::rtt:
+            {
+                StorageFileAdd storage_file_add;
+                std::move(received_packet).get(storage_file_add);
+
+                StorageFile storage_file;
+                storage_file.mime_type = storage_file_add.mime_type;
+                storage_file.data = storage_file_add.file;
+
+                string uri;
+                if (m_pimpl->m_storage.put_file(std::move(storage_file), uri))
                 {
                     StorageFileAddress file_address;
                     file_address.uri = uri;

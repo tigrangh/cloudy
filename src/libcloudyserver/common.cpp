@@ -102,6 +102,20 @@ pair<string, string> join_path(vector<string> const& path)
 
     return std::make_pair(path_string, last_name);
 }
+pair<boost::filesystem::path, string> check_path(vector<string> const& path)
+{
+    boost::filesystem::path fs_path("/");
+    string last_name;
+    for (auto const& name : path)
+    {
+        if (name == "." || name == "..")
+            throw std::runtime_error("self or parent directories are not supported");
+        fs_path /= name;
+        last_name = name;
+    }
+
+    return std::make_pair(fs_path, last_name);
+}
 
 namespace detail
 {

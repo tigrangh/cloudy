@@ -6,6 +6,8 @@
 
 #include <belt.pp/ilog.hpp>
 
+#include <boost/filesystem/path.hpp>
+
 #include <memory>
 
 namespace cloudy
@@ -19,6 +21,7 @@ class CLOUDYSERVERSHARED_EXPORT worker
 {
 public:
     worker(beltpp::ilog* plogger,
+           boost::filesystem::path const& fs,
            direct_channel& channel);
     worker(worker&& other) noexcept;
     ~worker();

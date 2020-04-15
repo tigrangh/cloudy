@@ -5,6 +5,8 @@
 #include <belt.pp/isocket.hpp>
 #include <belt.pp/packet.hpp>
 
+#include <boost/filesystem/path.hpp>
+
 #include <string>
 #include <chrono>
 #include <utility>
@@ -40,6 +42,7 @@ bool verify_storage_order(std::string const& storage_order_token,
 
 
 std::pair<std::string, std::string> join_path(std::vector<std::string> const& path);
+std::pair<boost::filesystem::path, std::string> check_path(std::vector<std::string> const& path);
 
 namespace detail
 {

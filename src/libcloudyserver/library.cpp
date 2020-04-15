@@ -205,12 +205,10 @@ void library::index(vector<string>&& path)
 vector<vector<string>> library::process_index()
 {
     vector<vector<string>> result;
-    if (false == m_pimpl->processing_for_index.empty())
-        return result;
 
     for (auto const& item : m_pimpl->pending_for_index.as_const()->items)
     {
-        if (m_pimpl->processing_for_index.size() == 2)
+        if (m_pimpl->processing_for_index.size() == 3)
             break;
         auto insert_res = m_pimpl->processing_for_index.insert(join_path(item.path).first);
 
@@ -284,7 +282,7 @@ bool library::check(vector<string>&& path)
         container.video.set(std::move(video));
         container.audio.set(std::move(audio));
 
-        check.media_definition_check.types_definitions.insert(container.to_string());
+        check.types_definitions.insert(container.to_string());
     }
     {
         AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
@@ -311,7 +309,7 @@ bool library::check(vector<string>&& path)
         container.video.set(std::move(video));
         container.audio.set(std::move(audio));
 
-        check.media_definition_check.types_definitions.insert(container.to_string());
+        check.types_definitions.insert(container.to_string());
     }
 
     auto& items = m_pimpl->pending_for_media_check->items;
@@ -337,12 +335,10 @@ bool library::check(vector<string>&& path)
 vector<ProcessMediaCheckRequest> library::process_check()
 {
     vector<ProcessMediaCheckRequest> result;
-    if (false == m_pimpl->processing_for_check.empty())
-        return result;
 
     for (InternalModel::ProcessMediaCheckRequest const& item : m_pimpl->pending_for_media_check.as_const()->items)
     {
-        if (m_pimpl->processing_for_check.size() == 2)
+        if (m_pimpl->processing_for_check.size() == 1)
             break;
         auto insert_res = m_pimpl->processing_for_check.insert(join_path(item.path).first);
 

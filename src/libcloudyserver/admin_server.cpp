@@ -133,16 +133,28 @@ public:
 
     void process_storage(InternalModel::ProcessMediaCheckResult&& pending_data)
     {
-        string data = std::move(pending_data.data);
-        pending_data.data.clear();
+        string data = std::move(pending_data.data_or_file);
+        pending_data.data_or_file.clear();
 
         if (pending_data.count &&
             false == data.empty())
         {
-            StorageModel::StorageFile file;
-            file.data = std::move(data);
-            file.mime_type = mime_type<AdminModel::MediaTypeDescriptionVideoContainer>();
-            ptr_direct_stream->send(storage_peerid, packet(std::move(file)));
+            if (pending_data.result_type == InternalModel::ResultType::data)
+            {
+                StorageModel::StorageFile file;
+                file.data = std::move(data);
+
+                file.mime_type = mime_type<AdminModel::MediaTypeDescriptionVideoContainer>();
+                ptr_direct_stream->send(storage_peerid, packet(std::move(file)));
+            }
+            else
+            {
+                StorageModel::StorageFileAdd file;
+                file.file = std::move(data);
+
+                file.mime_type = mime_type<AdminModel::MediaTypeDescriptionVideoContainer>();
+                ptr_direct_stream->send(storage_peerid, packet(std::move(file)));
+            }
             pending_for_storage.push_back(std::move(pending_data));
         }
         else
@@ -166,7 +178,6 @@ public:
             else
             {
                 process_check_done_wrapper(std::move(pending_data),
-                                           0,
                                            string(),
                                            string());
             }
@@ -180,7 +191,6 @@ public:
         {
             auto&& progress_info = pending_for_storage.front();
             process_check_done_wrapper(std::move(progress_info),
-                                       progress_info.count,
                                        uri,
                                        error_override);
 
@@ -191,7 +201,6 @@ public:
     }
 
     void process_check_done_wrapper(InternalModel::ProcessMediaCheckResult&& progress_info,
-                                    uint64_t count,
                                     string const& uri,
                                     string const& error_override)
     {
@@ -274,6 +283,14 @@ void admin_server::run(bool& stop_check)
     stop_check = false;
 
     {
+        auto items = m_pimpl->library.process_check();
+        for (auto&& item : items)
+        {
+            m_pimpl->writeln_node(join_path(item.path).first + " processing for check");
+            m_pimpl->ptr_direct_stream->send(worker_peerid, packet(std::move(item)));
+        }
+    }
+    {
         auto paths = m_pimpl->library.process_index();
         for (auto&& path : paths)
         {
@@ -281,14 +298,6 @@ void admin_server::run(bool& stop_check)
             InternalModel::ProcessIndexRequest request;
             request.path = std::move(path);
             m_pimpl->ptr_direct_stream->send(worker_peerid, packet(request));
-        }
-    }
-    {
-        auto items = m_pimpl->library.process_check();
-        for (auto&& item : items)
-        {
-            m_pimpl->writeln_node(join_path(item.path).first + " processing for check");
-            m_pimpl->ptr_direct_stream->send(worker_peerid, packet(std::move(item)));
         }
     }
 
@@ -382,13 +391,14 @@ void admin_server::run(bool& stop_check)
                 {
                     auto path_copy = request.path;
 
+                    m_pimpl->writeln_node(join_path(path_copy).first + " scheduling for index");
+
                     m_pimpl->library.index(std::move(path_copy));
 
                     request.path.pop_back();
                 }
                 stream.send(peerid, packet(m_pimpl->library.list(request.path)));
 
-                m_pimpl->writeln_node(join_path(request.path).first + " scheduling for index");
                 break;
             }
             case LogGet::rtt:
@@ -484,8 +494,8 @@ void admin_server::run(bool& stop_check)
             InternalModel::ProcessMediaCheckResult request;
             std::move(received_packet).get(request);
 
-            if (request.count && request.data.empty())
-                throw std::logic_error("request.count && request.data.empty()");
+            if (request.count && request.data_or_file.empty())
+                throw std::logic_error("request.count && request.data_or_file.empty()");
 
             m_pimpl->writeln_node(join_path(request.path).first + " got some checked data");
             m_pimpl->process_storage(std::move(request));

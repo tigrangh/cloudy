@@ -6,6 +6,12 @@ module StorageModel
         String data
     }
 
+    class StorageFileAdd
+    {
+        String mime_type
+        String file
+    }
+
     class StorageFileDelete
     {
         String uri

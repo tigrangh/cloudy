@@ -26,13 +26,9 @@ module InternalModel
 
     class ProcessMediaCheckRequest
     {
-        UInt64 storage_error_count
         Array String path
-        MediaDefinition media_definition_check
-    }
+        String output_dir
 
-    class MediaDefinition
-    {
         // value can be MediaTypeDescriptionVideo serialized
         Set String types_definitions
     }
@@ -57,8 +53,10 @@ module InternalModel
         UInt64 count
         Array String path
         Extension type // MediaTypeDescriptionVideo
-        String data
+        String data_or_file
+        ResultType result_type
     }
+    enum ResultType {data file}
 
     class AdminModelWrapper
     {
