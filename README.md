@@ -50,7 +50,7 @@ user@pc:~/projects/cloudy.build/install$ ./bin/cloudy/cloudyd -a 127.0.0.1:4444 
 -a is the admin endpoint, intended for internal use  
 -d path to data directory  
 
-## Minimal using example
+## Minimal usage example
 
 ### Add a file to media library
 Consider `/path/to/media/file.mp4` to be a local video file
