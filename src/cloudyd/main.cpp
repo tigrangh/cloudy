@@ -283,9 +283,9 @@ bool process_command_line(int argc, char** argv,
                             "admin interface")
             ("storage-interface,s", program_options::value<string>(&storage_bind_interface)->required(),
                             "storage interface")
-            ("data_directory,d", program_options::value<string>(&data_directory),
+            ("data-directory,d", program_options::value<string>(&data_directory),
                             "Data directory path")
-            ("daemon_private_key,k", program_options::value<string>(&str_pv_key),
+            ("daemon-private-key,k", program_options::value<string>(&str_pv_key),
                             "daemon private key");
         (void)(desc_init);
 
