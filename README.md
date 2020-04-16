@@ -38,7 +38,7 @@ user@pc:~/projects/cloudy$ git submodule update --init --recursive
 user@pc:~/projects/cloudy$ cd ..
 user@pc:~/projects$ mkdir cloudy.build
 user@pc:~/projects$ cd cloudy.build
-user@pc:~/projects/cloudy.build$ cmake -DCMAKE_INSTALL_PREFIX=./install -DCMAKE_BUILD_TYPE=Release ../publiq.pp
+user@pc:~/projects/cloudy.build$ cmake -DCMAKE_INSTALL_PREFIX=./install -DCMAKE_BUILD_TYPE=Release ../cloudy
 user@pc:~/projects/cloudy.build$ cmake --build . --target install
 ```
 
