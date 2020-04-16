@@ -24,7 +24,7 @@ For now, the only type of supported media is video.
 1. Admin API enhancements to define the types and options of media for the scan.
 1. Static front-end generator, maybe.
 
-## dependencies
+## Dependencies
 [boost](https://www.boost.org "boost"), [crypto++](https://www.cryptopp.com/ "crypto++") and [libav](https://www.libav.org/ "libav") are external dependencies.  
 [mesh.pp](https://github.com/publiqnet/mesh.pp "mesh.pp"), [belt.pp](https://github.com/publiqnet/belt.pp "belt.pp") and [a simple cmake utility](https://github.com/publiqnet/cmake_utility "the simple title for the simple cmake utility") are git submodules.
 
