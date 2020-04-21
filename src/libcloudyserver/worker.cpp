@@ -111,12 +111,13 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
             size_t count = 0;
             do
             {
-                unordered_map<string, string> filename_to_type_definition;
+                unordered_map<string, libavwrapper::media_part> filename_to_type_definition;
                 transcoder.run(filename_to_type_definition);
 
                 if (false == filename_to_type_definition.empty())
                 {
-                    count = 1;
+                    count = filename_to_type_definition.begin()->second.count;
+
                     for (auto const& ftod : filename_to_type_definition)
                     {
                         InternalModel::ProcessMediaCheckResult response;
@@ -125,7 +126,7 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
                         response.count = count;
                         response.accumulated = accumulate_count;
 
-                        AdminModel::detail::loader(response.type, ftod.second, nullptr);
+                        AdminModel::detail::loader(response.type, ftod.second.type_definition, nullptr);
 
                         response.result_type = InternalModel::ResultType::file;
                         response.data_or_file = ftod.first;

@@ -98,12 +98,7 @@ module AdminModel
         String codec
         String codec_priv_key
         String codec_priv_value
-    }
-
-    class MediaTypeDescriptionAVStreamMux
-    {
-        String muxer_opt_key
-        String muxer_opt_value
+        Object filter// MediaTypeDescriptionVideoFilter
     }
 
     class MediaTypeDescriptionVideoFilter
@@ -116,14 +111,16 @@ module AdminModel
     class MediaTypeDescriptionAVStream
     {
         Object transcode// MediaTypeDescriptionAVStreamTranscode
-        Object filter// MediaTypeDescriptionVideoFilter
     }
 
     class MediaTypeDescriptionVideoContainer
     {
         Object audio// MediaTypeDescriptionAVStream
         Object video// MediaTypeDescriptionAVStream
-        Object mux// MediaTypeDescriptionAVStreamMux
+
+        String muxer_opt_key
+        String muxer_opt_value
+        String container_extension
     }
 
     class LibraryIndex

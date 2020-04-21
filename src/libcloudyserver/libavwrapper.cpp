@@ -24,13 +24,12 @@ extern "C"
 }
 
 #include <cassert>
-#include <utility>
 
 using std::string;
 using beltpp::packet;
 using std::vector;
-using std::pair;
 using std::unordered_map;
+namespace filesystem = boost::filesystem;
 
 namespace libavwrapper
 {
@@ -66,7 +65,8 @@ frame_ptr frame_alloc()
 }
 void frame_unref(frame_ptr& ptr)
 {
-    av_frame_unref(ptr.get());
+    if (ptr)
+        av_frame_unref(ptr.get());
 }
 
 using filter_graph_ptr = beltpp::t_unique_ptr<AVFilterGraph>;
@@ -196,7 +196,34 @@ public:
         , avcodec_context(codec_context_null())
         , avmedia_type(AVMEDIA_TYPE_UNKNOWN)
     {}
+};
 
+class DataUnit
+{
+public:
+    DataUnit() = default;
+    DataUnit(DataUnit const&) = delete;
+    DataUnit(DataUnit&&) = default;
+
+    bool more_read_packet = false;
+    bool more_read_frame = false;
+    bool more_write_packet = false;
+    bool more_write_frame = false;
+
+    packet_ptr packe = packet_alloc();
+    frame_ptr frame = frame_alloc();
+    int stream_index;
+
+    ~DataUnit()
+    {
+        frame_unref(frame);
+        packet_unref(packe);
+    }
+};
+
+class DecoderCodecContextDefinition : public CodecContextDefinition
+{
+public:
     bool fill_stream_info(AVStream& avstream_,
                           int index_)
     {
@@ -234,33 +261,23 @@ public:
     }
 };
 
-class DecoderCodecContextDefinition : public CodecContextDefinition
-{
-public:
-};
-
 class EncoderCodecContextDefinition : public CodecContextDefinition
 {
 public:
     AdminModel::MediaTypeDescriptionAVStream options;
 
+    size_t duration = 0;
+    frame_ptr frame = frame_alloc();
+    packet_ptr packet = packet_alloc();
+
     AVFilterContext* filter_context_source = nullptr;
     AVFilterContext* filter_context_sink = nullptr;
     filter_graph_ptr filter_graph = filter_graph_null();
 
-    // desired output stream properties
-    int width = 0;
-    int height = 0;
-    AVRational frame_rate;
-    int format = 0;
-    int sample_rate = 0;
-    uint64_t channel_layout = 0;
-
-    // those are only set if no format is specified and the encoder gives us multiple options
     vector<AVRational> frame_rates;
     vector<int> formats;
     vector<int> sample_rates;
-    vector<uint64_t> channel_layouts;
+    //vector<uint64_t> channel_layouts;
 
     bool create_avcodec(string const& codec_name)
     {
@@ -277,11 +294,54 @@ public:
 
     void avcodec_context_init(AdminModel::MediaTypeDescriptionAVStreamTranscode const& options,
                               DecoderCodecContextDefinition const& decoder,
-                              AVRational input_framerate)
+                              AVRational input_framerate,
+                              bool& skip)
     {
+        skip = false;
+
+        AdminModel::MediaTypeDescriptionVideoFilter const* options_filter = nullptr;
+        if (options.filter.type() == AdminModel::MediaTypeDescriptionVideoFilter::rtt)
+            options.filter.get(options_filter);
+
         if (decoder.avmedia_type == AVMEDIA_TYPE_AUDIO)
         {
             int sample_rate = decoder.avcodec_context->sample_rate;
+
+            int count = 0;
+            /*if (avcodec_context->sample_rate)
+                sample_rate = avcodec_context->sample_rate;
+            else */if (avcodec->supported_samplerates)
+            {
+                count = 0;
+                while (avcodec->supported_samplerates[count])
+                {
+                    sample_rates.push_back(avcodec->supported_samplerates[count]);
+                    ++count;
+                }
+            }
+            /*if (avcodec_context->sample_fmt != AV_SAMPLE_FMT_NONE)
+                format = avcodec_context->sample_fmt;
+            else */if (avcodec->sample_fmts)
+            {
+                count = 0;
+                while (avcodec->sample_fmts[count] != AV_SAMPLE_FMT_NONE)
+                {
+                    formats.push_back(avcodec->sample_fmts[count]);
+                    ++count;
+                }
+            }
+            /*if (avcodec_context->channels)
+                channel_layout = av_get_default_channel_layout(avcodec_context->channels);
+            else if (avcodec->channel_layouts)
+            {
+                count = 0;
+                while (avcodec->channel_layouts[count])
+                {
+                    channel_layouts.push_back(avcodec->channel_layouts[count]);
+                    ++count;
+                }
+            }*/
+            //
 
             int OUTPUT_CHANNELS = 2;
             int OUTPUT_BIT_RATE = 196000;
@@ -305,8 +365,6 @@ public:
                            options.codec_priv_key.c_str(),
                            options.codec_priv_value.c_str(), 0);
 
-            avcodec_context->height = decoder.avcodec_context->height;
-            avcodec_context->width = decoder.avcodec_context->width;
             avcodec_context->sample_aspect_ratio = decoder.avcodec_context->sample_aspect_ratio;
             if (avcodec->pix_fmts)
                 avcodec_context->pix_fmt = avcodec->pix_fmts[0];
@@ -318,88 +376,92 @@ public:
             avcodec_context->rc_max_rate = 2 * 1000 * 1000;
             avcodec_context->rc_min_rate = 2.5 * 1000 * 1000;
 
-            avcodec_context->time_base = av_inv_q(input_framerate);
+            //  this code may be needed with some encoder
+            /*
+            if (avcodec->supported_framerates)
+            {
+                count = 0;
+                while (avcodec->supported_framerates[count].den != 0 &&
+                       avcodec->supported_framerates[count].num != 0)
+                {
+                    frame_rates.push_back(avcodec->supported_framerates[count]);
+                    ++count;
+                }
+            }
+            */
+            //  this one too
+            /*
+            if (avcodec->pix_fmts)
+            {
+                count = 0;
+                while (avcodec->pix_fmts[count] != AV_PIX_FMT_NONE)
+                {
+                    formats.push_back(avcodec->pix_fmts[count]);
+                    ++count;
+                }
+            }
+            */
+
+            if (nullptr == options_filter)
+            {
+                avcodec_context->height = decoder.avcodec_context->height;
+                avcodec_context->width = decoder.avcodec_context->width;
+                avcodec_context->framerate = input_framerate;
+            }
+            else
+            {
+                double height_ratio = double(options_filter->height) / decoder.avcodec_context->height;
+                double width_ratio = double(options_filter->width) / decoder.avcodec_context->width;
+
+                if (height_ratio >= width_ratio &&
+                    width_ratio <= 1)
+                {
+                    avcodec_context->height = decoder.avcodec_context->height * width_ratio;
+                    avcodec_context->width = options_filter->width;
+                }
+                else if (height_ratio <= width_ratio &&
+                         height_ratio <= 1)
+                {
+                    avcodec_context->height = options_filter->height;
+                    avcodec_context->width = decoder.avcodec_context->width * height_ratio;
+                }
+                else
+                {
+                    skip = true;
+                    return;
+                }
+                avcodec_context->framerate = {int(options_filter->fps), 1};
+            }
+
+            avcodec_context->time_base = av_inv_q(avcodec_context->framerate);
             avstream->time_base = avcodec_context->time_base;
-            //
-            avcodec_context->width = 800;
-            avcodec_context->height = 480;
-            //avcodec_context->framerate = {1, 30};
+//            avcodec_context->time_base = av_mul_q(decoder.avstream->time_base,
+//                                                  av_div_q(avcodec_context->framerate,
+//                                                           input_framerate));
+//            avstream->time_base = avcodec_context->time_base;
+            //avstream->avg_frame_rate = avcodec_context->framerate;
+            /*if (avcodec->supported_framerates)
+            {
+                int index = av_find_nearest_q_idx(avcodec_context->framerate, avcodec->supported_framerates);
+                avcodec_context->framerate = avcodec->supported_framerates[index];
+            }*/
         }
     }
 
-    bool prepare(format_context_ptr& avformat_context,
-                 AVRational input_framerate,
-                 DecoderCodecContextDefinition const& decoder)
+    bool avfilter_context_init(AdminModel::MediaTypeDescriptionAVStreamTranscode const& options,
+                               DecoderCodecContextDefinition const& decoder,
+                               AVRational input_framerate)
     {
-        avstream = format_new_stream(avformat_context);
-
-        index = decoder.index;
-        avmedia_type = decoder.avmedia_type;
-
-        if (options.transcode.empty())
-        {
-            avcodec_parameters_copy(avstream->codecpar, decoder.avstream->codecpar);
-            return true;
-        }
-
-        assert(options.transcode.type() == AdminModel::MediaTypeDescriptionAVStreamTranscode::rtt);
-        AdminModel::MediaTypeDescriptionAVStreamTranscode const* transcode_options;
-        options.transcode.get(transcode_options);
-
-        if (false == create_avcodec(transcode_options->codec))
-            return false;
-
-        avcodec_context = codec_context_alloc(avcodec);
-        if (nullptr == avcodec_context)
-        {
-            //logging("could not allocate memory for codec context");
-            return false;
-        }
-
-        avcodec_context_init(*transcode_options, decoder, input_framerate);
-
-        if (0 > avcodec_open2(avcodec_context.get(), avcodec.get(), nullptr))
-        {
-            //logging("could not open the codec");
-            return false;
-        }
-        avcodec_parameters_from_context(avstream->codecpar, avcodec_context.get());
+        AdminModel::MediaTypeDescriptionVideoFilter const* options_filter = nullptr;
+        if (options.filter.type() == AdminModel::MediaTypeDescriptionVideoFilter::rtt)
+            options.filter.get(options_filter);
 
         {
             filter_graph = filter_graph_alloc();
 
-            int count;
-            if (avmedia_type == AVMEDIA_TYPE_VIDEO)
+            if (options_filter &&
+                avmedia_type == AVMEDIA_TYPE_VIDEO)
             {
-                frame_rate = avcodec_context->framerate;
-                width = avcodec_context->width;
-                height = avcodec_context->height;
-                if (avcodec_context->pix_fmt != AV_PIX_FMT_NONE)
-                    format = avcodec_context->pix_fmt;
-                else if (avcodec->pix_fmts)
-                {
-                    count = 0;
-                    while (avcodec->pix_fmts[count] != AV_PIX_FMT_NONE)
-                    {
-                        formats.push_back(avcodec->pix_fmts[count]);
-                        ++count;
-                    }
-                }
-                if (avcodec_context->framerate.den != 0 &&
-                    avcodec_context->framerate.num != 0)
-                    frame_rate = avcodec_context->framerate;
-                else if (avcodec->supported_framerates)
-                {
-                    count = 0;
-                    while (avcodec->supported_framerates[count].den != 0 &&
-                           avcodec->supported_framerates[count].num != 0)
-                    {
-                        frame_rates.push_back(avcodec->supported_framerates[count]);
-                        ++count;
-                    }
-                }
-                //
-                //
                 AVFilterContext* buffer_context = nullptr;
                 AVFilterContext* scale_context = nullptr;
                 AVFilterContext* framerate_context = nullptr;
@@ -407,20 +469,21 @@ public:
                 {
                     string buffer_name = "buffer_" + std::to_string(index);
                     string buffer_arguments;
-                    buffer_arguments += "video_size=" + std::to_string(width) + "x" + std::to_string(height);
-                    buffer_arguments += ":pix_fmt=" + std::to_string(format);
-                    buffer_arguments += ":time_base=" + std::to_string(avstream->time_base.num) +
-                                        "/" + std::to_string(avstream->time_base.den);
+                    buffer_arguments += "video_size=" + std::to_string(decoder.avcodec_context->width) + "x" +
+                                                        std::to_string(decoder.avcodec_context->height);
+                    buffer_arguments += ":pix_fmt=" + std::to_string(decoder.avcodec_context->pix_fmt);
+                    buffer_arguments += ":time_base=" + std::to_string(decoder.avstream->time_base.num) +
+                                        "/" + std::to_string(decoder.avstream->time_base.den);
 
-                    auto sar = avstream->sample_aspect_ratio;
+                    auto sar = decoder.avstream->sample_aspect_ratio;
                     if(0 == sar.den)
                         sar = (AVRational){0,1};
                     buffer_arguments += ":pixel_aspect=" + std::to_string(sar.num) +
                                         "/" + std::to_string(sar.den);
-                    if (frame_rate.num && frame_rate.den)
+                    if (input_framerate.num && input_framerate.den)
                     {
-                        buffer_arguments += ":frame_rate=" + std::to_string(frame_rate.num) +
-                                            "/" + std::to_string(frame_rate.den);
+                        buffer_arguments += ":frame_rate=" + std::to_string(input_framerate.num) +
+                                            "/" + std::to_string(input_framerate.den);
                     }
 
                     if (0 > avfilter_graph_create_filter(&buffer_context,
@@ -432,31 +495,32 @@ public:
                         return false;
                 }
 
-                if (width || height)
+                if (options_filter)
                 {
-                    string scale_name = "scale_" + std::to_string(index);
-                    string scale_arguments = std::to_string(width) + ":" + std::to_string(height);
-
-                    if (0 > avfilter_graph_create_filter(&scale_context,
-                                                         avfilter_get_by_name("scale"),
-                                                         scale_name.c_str(),
-                                                         scale_arguments.c_str(),
-                                                         nullptr,
-                                                         filter_graph.get()))
-                        return false;
-                }
-
-                if (0 != frame_rate.num &&
-                    0 != frame_rate.den)
-                {
-                    string framerate_arguments = "fps=" + std::to_string(frame_rate.num) +
-                                                 "/" + std::to_string(frame_rate.den);
+                    string framerate_arguments = "fps=" + std::to_string(avcodec_context->framerate.num) +
+                                                 "/" + std::to_string(avcodec_context->framerate.den);
                     string framerate_name = "fps_" + std::to_string(index);
 
                     if (0 > avfilter_graph_create_filter(&framerate_context,
                                                          avfilter_get_by_name("fps"),
                                                          framerate_name.c_str(),
                                                          framerate_arguments.c_str(),
+                                                         nullptr,
+                                                         filter_graph.get()))
+                        return false;
+                }
+
+                if (options_filter)
+                {
+                    string scale_name = "scale_" + std::to_string(index);
+                    string scale_arguments = std::to_string(avcodec_context->width) + ":" +
+                                             std::to_string(avcodec_context->height);
+                    scale_arguments += ":flags=bicubic";
+
+                    if (0 > avfilter_graph_create_filter(&scale_context,
+                                                         avfilter_get_by_name("scale"),
+                                                         scale_name.c_str(),
+                                                         scale_arguments.c_str(),
                                                          nullptr,
                                                          filter_graph.get()))
                         return false;
@@ -521,54 +585,19 @@ public:
             }
             else if (avmedia_type == AVMEDIA_TYPE_AUDIO)
             {
-                if (avcodec_context->sample_fmt != AV_SAMPLE_FMT_NONE)
-                    format = avcodec_context->sample_fmt;
-                else if (avcodec->sample_fmts)
-                {
-                    count = 0;
-                    while (avcodec->sample_fmts[count] != AV_SAMPLE_FMT_NONE)
-                    {
-                        formats.push_back(avcodec->sample_fmts[count]);
-                        ++count;
-                    }
-                }
-                if (avcodec_context->sample_rate)
-                    sample_rate = avcodec_context->sample_rate;
-                else if (avcodec->supported_samplerates)
-                {
-                    count = 0;
-                    while (avcodec->supported_samplerates[count])
-                    {
-                        sample_rates.push_back(avcodec->supported_samplerates[count]);
-                        ++count;
-                    }
-                }
-                if (avcodec_context->channels)
-                    channel_layout = av_get_default_channel_layout(avcodec_context->channels);
-                else if (avcodec->channel_layouts)
-                {
-                    count = 0;
-                    while (avcodec->channel_layouts[count])
-                    {
-                        channel_layouts.push_back(avcodec->channel_layouts[count]);
-                        ++count;
-                    }
-                }
-                //
-                //
                 AVFilterContext* buffer_context = nullptr;
                 AVFilterContext* format_context = nullptr;
                 {
                     string buffer_name = "in_" + std::to_string(index);
                     string buffer_argument;
-                    buffer_argument += "time_base=" + std::to_string(avstream->time_base.num) +
-                                       "/" + std::to_string(avstream->time_base.den);
-                    buffer_argument += ":sample_rate=" + std::to_string(avcodec_context->sample_rate);
+                    buffer_argument += "time_base=" + std::to_string(decoder.avstream->time_base.num) +
+                                       "/" + std::to_string(decoder.avstream->time_base.den);
+                    buffer_argument += ":sample_rate=" + std::to_string(decoder.avcodec_context->sample_rate);
                     buffer_argument += ":sample_fmt=";
-                    buffer_argument += av_get_sample_fmt_name(avcodec_context->sample_fmt);
+                    buffer_argument += av_get_sample_fmt_name(decoder.avcodec_context->sample_fmt);
                     buffer_argument += ":channel_layout=";
                     std::stringstream sstream;
-                    sstream << std::hex << avcodec_context->channel_layout;
+                    sstream << std::hex << decoder.avcodec_context->channel_layout;
                     buffer_argument += /*"0x" + */sstream.str();
 
                     if (0 > avfilter_graph_create_filter(&buffer_context,
@@ -582,61 +611,51 @@ public:
                 {
                     string format_name = "format_" + std::to_string(index);
                     string arg_sample_rate;
-                    if (sample_rate)
-                        arg_sample_rate = std::to_string(sample_rate);
-                    else
+                    for (size_t index = 0; index != sample_rates.size(); ++index)
                     {
-                        for (size_t index = 0; index != sample_rates.size(); ++index)
-                        {
-                            arg_sample_rate += std::to_string(sample_rates[index]);
-                            if (index != sample_rates.size() - 1)
-                                arg_sample_rate += "|";
-                        }
+                        arg_sample_rate += std::to_string(sample_rates[index]);
+                        if (index != sample_rates.size() - 1)
+                            arg_sample_rate += "|";
                     }
                     if (false == arg_sample_rate.empty())
                         arg_sample_rate = "sample_rates=" + arg_sample_rate;
 
                     string arg_sample_fmt;
-                    if (format)
-                        arg_sample_fmt = av_get_sample_fmt_name(AVSampleFormat(format));
-                    else
+                    for (size_t index = 0; index != formats.size(); ++index)
                     {
-                        for (size_t index = 0; index != formats.size(); ++index)
-                        {
-                            arg_sample_fmt += av_get_sample_fmt_name(AVSampleFormat(formats[index]));
-                            if (index != formats.size() - 1)
-                                arg_sample_fmt += "|";
-                        }
+                        arg_sample_fmt += av_get_sample_fmt_name(AVSampleFormat(formats[index]));
+                        if (index != formats.size() - 1)
+                            arg_sample_fmt += "|";
                     }
                     if (false == arg_sample_fmt.empty())
                         arg_sample_fmt = "sample_fmts=" + arg_sample_fmt;
 
                     string arg_channel_layout;
-                    if (channel_layout)
+                    if (avcodec_context->channel_layout)
                     {
                         std::stringstream sstream;
                         sstream << std::hex << avcodec_context->channel_layout;
                         arg_channel_layout = /*"0x" + */sstream.str();
-                    }
+                    }/*
                     else
                     {
                         for (size_t index = 0; index != channel_layouts.size(); ++index)
                         {
                             std::stringstream sstream;
                             sstream << std::hex << avcodec_context->channel_layout;
-                            arg_channel_layout += /*"0x" + */sstream.str();
+                            arg_channel_layout += /-*"0x" + *-/sstream.str();
                             if (index != channel_layouts.size() - 1)
                                 arg_channel_layout += "|";
                         }
-                    }
+                    }*/
                     if (false == arg_channel_layout.empty())
                         arg_channel_layout = "channel_layouts=" + arg_channel_layout;
 
                     string format_argument;
-                    if (false == arg_sample_rate.empty())
-                        format_argument += arg_sample_rate + ":";
                     if (false == arg_sample_fmt.empty())
                         format_argument += arg_sample_fmt + ":";
+                    if (false == arg_sample_rate.empty())
+                        format_argument += arg_sample_rate + ":";
                     if (false == arg_channel_layout.empty())
                         format_argument += arg_channel_layout + ":";
 
@@ -692,9 +711,126 @@ public:
                         filter_context_source = current;
                 }
 
+                if (!(avcodec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE))
+                    av_buffersink_set_frame_size(filter_context_sink, avcodec_context->frame_size);
+
                 if (0 > avfilter_graph_config(filter_graph.get(), nullptr))
                     return false;
 
+            }
+        }
+
+        return true;
+    }
+
+    bool prepare(format_context_ptr& avformat_context,
+                 AVRational input_framerate,
+                 DecoderCodecContextDefinition const& decoder,
+                 bool& skip)
+    {
+        skip = false;
+
+        avstream = format_new_stream(avformat_context);
+
+        index = decoder.index;
+        avmedia_type = decoder.avmedia_type;
+
+        if (options.transcode.empty())
+        {
+            avcodec_parameters_copy(avstream->codecpar, decoder.avstream->codecpar);
+            return true;
+        }
+
+        assert(options.transcode.type() == AdminModel::MediaTypeDescriptionAVStreamTranscode::rtt);
+        AdminModel::MediaTypeDescriptionAVStreamTranscode const* transcode_options;
+        options.transcode.get(transcode_options);
+
+        if (false == create_avcodec(transcode_options->codec))
+            return false;
+
+        avcodec_context = codec_context_alloc(avcodec);
+        if (nullptr == avcodec_context)
+        {
+            //logging("could not allocate memory for codec context");
+            return false;
+        }
+
+        avcodec_context_init(*transcode_options, decoder, input_framerate, skip);
+
+        if (skip)
+            return true;
+
+        if (0 > avcodec_open2(avcodec_context.get(), avcodec.get(), nullptr))
+        {
+            //logging("could not open the codec");
+            return false;
+        }
+        avcodec_parameters_from_context(avstream->codecpar, avcodec_context.get());
+
+        if (false == avfilter_context_init(*transcode_options, decoder, input_framerate))
+            return false;
+
+        return true;
+    }
+
+    bool process_encode_frame(format_context_ptr& avformat_context,
+                              DecoderCodecContextDefinition const& decoder)
+    {
+        AdminModel::MediaTypeDescriptionAVStreamTranscode const* options_transcode = nullptr;
+        if (options.transcode.type() == AdminModel::MediaTypeDescriptionAVStreamTranscode::rtt)
+            options.transcode.get(options_transcode);
+        AdminModel::MediaTypeDescriptionVideoFilter const* options_filter = nullptr;
+        if (options_transcode && options_transcode->filter.type() == AdminModel::MediaTypeDescriptionVideoFilter::rtt)
+            options_transcode->filter.get(options_filter);
+
+        packet_unref(packet);
+
+        //  encode the frame
+        if (frame && avmedia_type == AVMEDIA_TYPE_VIDEO)
+            frame->pict_type = AV_PICTURE_TYPE_NONE;
+        int response = avcodec_send_frame(avcodec_context.get(),
+                                          frame.get());
+
+        while (response >= 0)
+        {
+            response = avcodec_receive_packet(avcodec_context.get(),
+                                              packet.get());
+            if (response == AVERROR(EAGAIN) ||
+                response == AVERROR_EOF)
+                break;
+            else if (response < 0)
+            {
+                //logging("Error while receiving packet from encoder: %s", av_err2str(response));
+                return false;
+            }
+
+            packet->stream_index = decoder.index;
+
+            if (options_filter &&
+                avmedia_type == AVMEDIA_TYPE_VIDEO)
+                av_packet_rescale_ts(packet.get(),
+                                     av_inv_q(avcodec_context->framerate),
+                                     avstream->time_base);
+            else
+                av_packet_rescale_ts(packet.get(),
+                                     decoder.avstream->time_base,
+                                     avstream->time_base);
+
+            if (avmedia_type == AVMEDIA_TYPE_VIDEO)
+                packet->duration = avstream->time_base.den /
+                                   avstream->time_base.num *
+                                   avcodec_context->framerate.den /
+                                   avcodec_context->framerate.num;
+                                   //decoder.avstream->avg_frame_rate.den /
+                                   //decoder.avstream->avg_frame_rate.num;
+
+            duration = double(packet->dts) / avstream->time_base.den * avstream->time_base.num;
+
+            if (0 != av_interleaved_write_frame(avformat_context.get(),
+                                                packet.get()))
+            {
+                //logging("Error %d while receiving packet from decoder: %s", response, av_err2str(response));
+                return false;
             }
         }
 
@@ -729,28 +865,6 @@ public:
     }
 };
 
-class Input
-{
-public:
-    Input() = default;
-    Input(Input const&) = delete;
-    Input(Input&&) = default;
-
-    bool more = false;
-    packet_ptr packet = packet_null();
-    vector<frame_ptr> frames;
-    int stream_index;
-
-    ~Input()
-    {
-        for (auto& frame : frames)
-            frame_unref(frame);
-
-        if (packet)
-            packet_unref(packet);
-    }
-};
-
 class DecoderContext;
 class EncoderContext : public Context<EncoderCodecContextDefinition>
 {
@@ -762,9 +876,11 @@ public:
     AVFilterGraph *graph;
 
     bool load(packet&& options,
-              DecoderContext& decoder);
+              DecoderContext& decoder,
+              filesystem::path const& output_dir,
+              size_t file_index);
     bool process(DecoderContext& decoder_context,
-                 Input& input);
+                 DataUnit& data_unit);
     bool final(DecoderContext& decoder_context);
 };
 
@@ -774,7 +890,8 @@ public:
     //string filepath;
 
     bool load(string const& path);
-    std::pair<bool, Input> next(vector<EncoderContext>& encoder_contexts);
+    bool next(vector<EncoderContext>& encoder_contexts,
+              DataUnit& data_unit);
 protected:
     bool scan_avformat_context()
     {
@@ -820,112 +937,127 @@ bool DecoderContext::load(string const& path)
     return true;
 }
 
-std::pair<bool, Input> DecoderContext::next(vector<EncoderContext>& encoder_contexts)
+bool DecoderContext::next(vector<EncoderContext>& encoder_contexts,
+                          DataUnit& data_unit)
 {
-    std::pair<bool, Input> result;
-    result.first = false;
-
-    packet_ptr input_packet = packet_alloc();
-    if (nullptr == input_packet)
+    if (data_unit.more_read_packet &&
+        false == data_unit.more_write_packet &&
+        false == data_unit.more_read_frame &&
+        false == data_unit.more_write_frame)
     {
-        //logging("failed to allocate memory for AVPacket");
-        return result;
+        packet_unref(data_unit.packe);
+
+        if (0 > av_read_frame(avformat_context.get(), data_unit.packe.get()))
+            data_unit.more_read_packet = false;
+        else
+        {
+            data_unit.stream_index = data_unit.packe->stream_index;
+
+            bool input_frames_done = false;
+            bool input_packet_done = false;
+
+            for (auto& encoder_context : encoder_contexts)
+            {
+                DecoderCodecContextDefinition* pdecoder = nullptr;
+                EncoderCodecContextDefinition* pencoder = nullptr;
+
+                if (codec_context_definition_by_stream(data_unit.stream_index, pdecoder) &&
+                    encoder_context.codec_context_definition_by_stream(data_unit.stream_index, pencoder) &&
+                    pencoder && pdecoder)
+                {
+                    EncoderCodecContextDefinition& encoder = *pencoder;
+                    DecoderCodecContextDefinition& decoder = *pdecoder;
+
+                    if (encoder.options.transcode.empty() &&
+                        false == input_packet_done)
+                    {
+                        input_packet_done = true;
+                    }
+                    else if (false == encoder.options.transcode.empty() &&
+                             false == input_frames_done)
+                    {
+                        input_frames_done = true;
+
+                        int response = avcodec_send_packet(decoder.avcodec_context.get(),
+                                                           data_unit.packe.get());
+                        if (response < 0)
+                        {
+                            //logging("Error while sending packet to decoder: %s", av_err2str(response));
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            if (input_packet_done)
+                data_unit.more_write_packet = true;
+            if (input_frames_done)
+                data_unit.more_read_frame = true;
+        }
     }
 
-    while (av_read_frame(avformat_context.get(), input_packet.get()) >= 0)
+    if (data_unit.more_read_frame &&
+        false == data_unit.more_write_frame)
     {
-        result.second.stream_index = input_packet->stream_index;
-
-        bool input_frames_done = false;
-        bool input_packet_done = false;
-
         for (auto& encoder_context : encoder_contexts)
         {
             DecoderCodecContextDefinition* pdecoder = nullptr;
             EncoderCodecContextDefinition* pencoder = nullptr;
 
-            if (codec_context_definition_by_stream(result.second.stream_index, pdecoder) &&
-                encoder_context.codec_context_definition_by_stream(result.second.stream_index, pencoder) &&
+            if (codec_context_definition_by_stream(data_unit.stream_index, pdecoder) &&
+                encoder_context.codec_context_definition_by_stream(data_unit.stream_index, pencoder) &&
                 pencoder && pdecoder)
             {
                 EncoderCodecContextDefinition& encoder = *pencoder;
                 DecoderCodecContextDefinition& decoder = *pdecoder;
 
-                if (encoder.options.transcode.empty() &&
-                    false == input_packet_done)
+                if (false == encoder.options.transcode.empty())
                 {
-                    input_packet_done = true;
-                }
-                else if (false == encoder.options.transcode.empty() &&
-                         false == input_frames_done)
-                {
-                    input_frames_done = true;
+                    int response;
 
-                    int response = avcodec_send_packet(decoder.avcodec_context.get(),
-                                                       input_packet.get());
-                    if (response < 0)
+                    frame_unref(data_unit.frame);
+
+                    response = avcodec_receive_frame(decoder.avcodec_context.get(),
+                                                     data_unit.frame.get());
+                    if (response == AVERROR(EAGAIN) ||
+                        response == AVERROR_EOF)
+                        data_unit.more_read_frame = false;
+                    else if (response < 0)
                     {
-                        //logging("Error while sending packet to decoder: %s", av_err2str(response));
-                        return result;
+                        //logging("Error while receiving frame from decoder: %s", av_err2str(response));
+                        return false;
                     }
-
-                    frame_ptr input_frame = frame_alloc();
-
-                    while (response >= 0)
+                    else
                     {
-                        if (nullptr == input_frame)
-                            input_frame = frame_alloc();
-
-                        if (nullptr == input_frame)
-                        {
-                            //logging("failed to allocate memory for AVFrame");
-                            return result;
-                        }
-                        else
-                        {
-                            response = avcodec_receive_frame(decoder.avcodec_context.get(),
-                                                             input_frame.get());
-                            if (response == AVERROR(EAGAIN) ||
-                                response == AVERROR_EOF)
-                                break;
-                            else if (response < 0)
-                            {
-                                //logging("Error while receiving frame from decoder: %s", av_err2str(response));
-                                return result;
-                            }
-                            else
-                            {
-                                result.second.frames.push_back(std::move(input_frame));
-                            }
-                        }
+                        data_unit.more_write_frame = true;
                     }
                 }
+                break;
             }
-        }
-
-        if (input_packet_done)
-            result.second.packet = std::move(input_packet);
-
-        if (result.second.frames.size() ||
-            result.second.packet)
-        {
-            result.first = true;
-            result.second.more = true;
-            return result;
         }
     }
 
-    result.first = true;
-    return result;
+    return true;
 }
 
 bool EncoderContext::load(packet&& options,
-                          DecoderContext& decoder_context)
+                          DecoderContext& decoder_context,
+                          filesystem::path const& output_dir,
+                          size_t file_index)
 {
     if (options.type() != AdminModel::MediaTypeDescriptionVideoContainer::rtt)
         return true;
     AdminModel::MediaTypeDescriptionVideoContainer container_options;
     std::move(options).get(container_options);
+
+    filepath = (output_dir / (std::to_string(file_index) + "." + container_options.container_extension)).string();
+    type_definition_str = options.to_string();
+    avformat_context = format_context_alloc_output(filepath);
+    if (nullptr == avformat_context)
+    {
+        //logging("could not allocate memory for output format");
+        return false;
+    }
 
     for (auto const& decoder : decoder_context.definitions)
     {
@@ -945,10 +1077,15 @@ bool EncoderContext::load(packet&& options,
         if (option && option->type() == AdminModel::MediaTypeDescriptionAVStream::rtt)
         {
             option->get(encoder.options);
+            bool skip = false;
             if (false == encoder.prepare(avformat_context,
                                          input_framerate,
-                                         decoder))
+                                         decoder,
+                                         skip))
                 return false;
+
+            if (skip)
+                return true;
 
             definitions.push_back(std::move(encoder));
         }
@@ -966,15 +1103,12 @@ bool EncoderContext::load(packet&& options,
         }
     }
 
-    if (container_options.mux.type() == AdminModel::MediaTypeDescriptionAVStreamMux::rtt)
-    {
-        AdminModel::MediaTypeDescriptionAVStreamMux muxer_options;
-        std::move(container_options).mux.get(muxer_options);
+    if (false == container_options.muxer_opt_key.empty() &&
+        false == container_options.muxer_opt_value.empty())
         av_dict_set(&muxer_opts,
-                    muxer_options.muxer_opt_key.c_str(),
-                    muxer_options.muxer_opt_value.c_str(),
+                    container_options.muxer_opt_key.c_str(),
+                    container_options.muxer_opt_value.c_str(),
                     0);
-    }
 
     if (0 > avformat_write_header(avformat_context.get(),
                                   &muxer_opts))
@@ -986,149 +1120,127 @@ bool EncoderContext::load(packet&& options,
     return true;
 }
 bool EncoderContext::process(DecoderContext& decoder_context,
-                             Input& input)
+                             DataUnit& data_unit)
 {
-    frame_ptr filter_frame = frame_alloc();
-    if (nullptr == filter_frame)
-    {
-        //logging("failed to allocate memory for AVFrame");
-        return false;
-    }
-
     bool flush = false;
-    if (input.frames.empty() && nullptr == input.packet)
+    if (data_unit.more_read_packet == false)
         flush = true;
 
-    for (auto& encoder : definitions)
+    if (data_unit.more_write_packet)
     {
-        if (false == flush &&
-            input.stream_index != encoder.index)
-            continue;
-
-        DecoderCodecContextDefinition* pdecoder = nullptr;
-        if (false == decoder_context.codec_context_definition_by_stream(encoder.index, pdecoder) ||
-            nullptr == pdecoder)
-            return false;
-
-        DecoderCodecContextDefinition& decoder = *pdecoder;
-
-        if (encoder.options.transcode.empty())
+        for (auto& encoder : definitions)
         {
-            if (input.packet)
+            if (data_unit.stream_index != encoder.index)
+                continue;
+
+            DecoderCodecContextDefinition* pdecoder = nullptr;
+            if (false == decoder_context.codec_context_definition_by_stream(encoder.index, pdecoder) ||
+                nullptr == pdecoder)
+                return false;
+
+            DecoderCodecContextDefinition& decoder = *pdecoder;
+
+            if (encoder.options.transcode.empty())
             {
-                packet_ptr output_packet = packet_alloc();
-                if (nullptr == output_packet)
-                {
-                    //logging("failed to allocate memory for AVPacket");
-                    return false;
-                }
+                packet_ptr& output_packet = encoder.packet;
+                packet_unref(output_packet);
+
                 av_init_packet(output_packet.get());
-                av_packet_ref(output_packet.get(), input.packet.get());
+                av_packet_ref(output_packet.get(), data_unit.packe.get());
 
                 av_packet_rescale_ts(output_packet.get(),
                                      decoder.avstream->time_base,
                                      encoder.avstream->time_base);
-                int response;
-                response = av_interleaved_write_frame(avformat_context.get(),
-                                                      output_packet.get());
-                if (response != 0)
+                if (0 != av_interleaved_write_frame(avformat_context.get(),
+                                                    output_packet.get()))
                 {
                     //logging("error while copying stream packet");
                     return false;
                 }
             }
         }
-        else
+    }
+
+    if (data_unit.more_write_frame || flush)
+    {
+        for (auto& encoder : definitions)
         {
-            auto* pinput_frames = &input.frames;
-            vector<frame_ptr> for_flush;
-            for_flush.push_back(beltpp::t_unique_nullptr<AVFrame>());
-            if (flush)
-                pinput_frames = &for_flush;
+            if (false == flush &&
+                data_unit.stream_index != encoder.index)
+                continue;
 
-            for (auto& input_frame : *pinput_frames)
+            DecoderCodecContextDefinition* pdecoder = nullptr;
+            if (false == decoder_context.codec_context_definition_by_stream(encoder.index, pdecoder) ||
+                nullptr == pdecoder)
+                return false;
+
+            DecoderCodecContextDefinition& decoder = *pdecoder;
+
+            if (false == encoder.options.transcode.empty())
             {
-                if (input_frame && encoder.avmedia_type == AVMEDIA_TYPE_VIDEO)
-                    input_frame->pict_type = AV_PICTURE_TYPE_NONE;
+                if (encoder.avmedia_type == AVMEDIA_TYPE_VIDEO)
+                    data_unit.frame->pict_type = AV_PICTURE_TYPE_NONE;
 
-                //  avfilter processing block
+                frame_unref(encoder.frame);
+                av_frame_ref(encoder.frame.get(), data_unit.frame.get());
+
                 if (encoder.filter_context_sink &&
                     encoder.filter_context_source)
                 {
                     //  video example shows AV_BUFFERSRC_FLAG_KEEP_REF instead of 0 below
                     if (0 > av_buffersrc_add_frame_flags(encoder.filter_context_source,
-                                                         input_frame.get(),
-                                                         0))
+                                                         flush ? nullptr : encoder.frame.get(),
+                                                         0))//AV_BUFFERSRC_FLAG_PUSH))
                     {
-                        //av_log(nullptr, AV_LOG_ERROR, "Error while feeding the audio filtergraph\n");
+                        //av_log(nullptr, AV_LOG_ERROR, "Error while feeding the filtergraph\n");
                         return false;
                     }
-                    /* pull filtered audio from the filtergraph */
-                    int response;
+                }
+
+                if (encoder.filter_context_sink &&
+                    encoder.filter_context_source)
+                {
+                    // pull filtered frame from the filtergraph
                     while (true)
                     {
-                        response = av_buffersink_get_frame(encoder.filter_context_sink,
-                                                           filter_frame.get());
+                        frame_unref(encoder.frame);
+                        //int response = av_buffersink_get_frame_flags(encoder.filter_context_sink,
+                        //                                             encoder.frame.get(),
+                        //                                             AV_BUFFERSINK_FLAG_NO_REQUEST);
+                        int response = av_buffersink_get_frame(encoder.filter_context_sink,
+                                                               encoder.frame.get());
                         if (response == AVERROR(EAGAIN) ||
                             response == AVERROR_EOF)
+                        {
+                            if (flush)
+                            {
+                                encoder.frame.reset();
+                                encoder.process_encode_frame(avformat_context,
+                                                             decoder);
+                            }
                             break;
+                        }
                         else if (response < 0)
                             return false;
-
-                        frame_unref(input_frame);
-                        input_frame = std::move(filter_frame);
+                        else
+                        {
+                            encoder.process_encode_frame(avformat_context,
+                                                         decoder);
+                        }
                     }
                 }
-                //  avfilter processing done
-
-                packet_ptr output_packet = packet_alloc();
-                if (nullptr == output_packet)
+                else
                 {
-                    //logging("could not allocate memory for output packet");
-                    return false;
+                    if (flush)
+                        encoder.frame.reset();
+                    encoder.process_encode_frame(avformat_context,
+                                                 decoder);
                 }
-
-                //  encode the frame
-                int response = avcodec_send_frame(encoder.avcodec_context.get(),
-                                                  input_frame.get());
-
-                while (response >= 0)
-                {
-                    response = avcodec_receive_packet(encoder.avcodec_context.get(),
-                                                      output_packet.get());
-                    if (response == AVERROR(EAGAIN) ||
-                        response == AVERROR_EOF)
-                        break;
-                    else if (response < 0)
-                    {
-                        //logging("Error while receiving packet from encoder: %s", av_err2str(response));
-                        return false;
-                    }
-
-                    output_packet->stream_index = decoder.index;
-                    if (encoder.avmedia_type == AVMEDIA_TYPE_VIDEO)
-                        output_packet->duration = encoder.avstream->time_base.den /
-                                                  encoder.avstream->time_base.num /
-                                                  decoder.avstream->avg_frame_rate.num *
-                                                  decoder.avstream->avg_frame_rate.den;
-
-                    av_packet_rescale_ts(output_packet.get(),
-                                         decoder.avstream->time_base,
-                                         encoder.avstream->time_base);
-                    response = av_interleaved_write_frame(avformat_context.get(),
-                                                          output_packet.get());
-                    if (response != 0)
-                    {
-                        //logging("Error %d while receiving packet from decoder: %s", response, av_err2str(response));
-                        return false;
-                    }
-                }
-                packet_unref(output_packet);
             }
-        }
 
-        if (flush)
-            encoder.avcodec_context.reset();
+            if (flush)
+                encoder.avcodec_context.reset();
+        }
     }
 
     if (flush)
@@ -1170,16 +1282,11 @@ bool transcoder::init(vector<packet>&& options)
         ++option_index;
 
         EncoderContext encoder_context;
-        encoder_context.filepath = (output_dir / (std::to_string(pimpl->encoders.size()) + ".mp4")).string();
-        encoder_context.type_definition_str = option.to_string();
-        encoder_context.avformat_context = format_context_alloc_output(encoder_context.filepath);
-        if (nullptr == encoder_context.avformat_context)
-        {
-            //logging("could not allocate memory for output format");
-            return false;
-        }
 
-        if (false == encoder_context.load(std::move(option), pimpl->decoder))
+        if (false == encoder_context.load(std::move(option),
+                                          pimpl->decoder,
+                                          output_dir,
+                                          pimpl->encoders.size()))
             return false;
 
         if (false == encoder_context.definitions.empty())
@@ -1191,28 +1298,38 @@ bool transcoder::init(vector<packet>&& options)
     return true;
 }
 
-bool transcoder::loop(unordered_map<string, string>& filename_to_type_definition)
+bool transcoder::loop(unordered_map<string, media_part>& filename_to_media_part)
 {
-    filename_to_type_definition.clear();
+    unordered_map<string, media_part> filename_to_media_part_temp;
+    DataUnit data_unit;
+    data_unit.more_read_packet = true;
+
     while (true)
     {   //  for now this will not actually do chunk by chunk encoding
-        auto input = pimpl->decoder.next(pimpl->encoders);
-        if (false == input.first)
+        if (false == pimpl->decoder.next(pimpl->encoders, data_unit))
             return false;
 
         for (auto& encoder_context : pimpl->encoders)
         {
             if (false == encoder_context.process(pimpl->decoder,
-                                                 input.second))
+                                                 data_unit))
                 return false;
 
-            filename_to_type_definition[encoder_context.filepath] = encoder_context.type_definition_str;
+            if (false == data_unit.more_read_frame)
+            {   //  flush
+                filename_to_media_part_temp[encoder_context.filepath].type_definition = encoder_context.type_definition_str;
+                filename_to_media_part_temp[encoder_context.filepath].count = encoder_context.definitions.front().duration;
+            }
         }
 
-        if (false == input.second.more)
+        data_unit.more_write_frame = false;
+        data_unit.more_write_packet = false;
+
+        if (false == data_unit.more_read_packet)
             break;
     }
 
+    filename_to_media_part = std::move(filename_to_media_part_temp);
     return true;
 }
 
@@ -1226,10 +1343,10 @@ bool transcoder::clean()
     return true;
 }
 
-void transcoder::run(unordered_map<string, string>& filename_to_type_definition)
+void transcoder::run(unordered_map<string, media_part>& filename_to_media_part)
 {
     if (before_loop == state &&
-        loop(filename_to_type_definition))
+        loop(filename_to_media_part))
     {
         state = done;
     }

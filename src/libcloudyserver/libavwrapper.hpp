@@ -14,6 +14,13 @@ namespace libavwrapper
 {
 class transcoder_detail;
 
+class media_part
+{
+public:
+    size_t count = 0;
+    std::string type_definition;
+};
+
 class transcoder
 {
 private:
@@ -22,7 +29,7 @@ private:
     e_state state = before_init;
     std::unique_ptr<transcoder_detail> pimpl;
 
-    bool loop(std::unordered_map<std::string, std::string>& filename_to_type_definition);
+    bool loop(std::unordered_map<std::string, media_part>& filename_to_media_part);
     bool clean();
 public:
     transcoder();
@@ -31,6 +38,6 @@ public:
     boost::filesystem::path output_dir;
 
     bool init(std::vector<beltpp::packet>&& options);
-    void run(std::unordered_map<std::string, std::string>& filename_to_type_definition);
+    void run(std::unordered_map<std::string, media_part>& filename_to_media_part);
 };
 }

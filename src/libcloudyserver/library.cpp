@@ -257,20 +257,21 @@ bool library::check(vector<string>&& path)
     ProcessMediaCheckRequest check;
     check.path = std::move(path);
 
+    if (false)
     {
+        AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.height = 720;
+        video_filter.width = 1280;
+        video_filter.fps = 15;
+
         AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
+        video_transcode.filter.set(std::move(video_filter));
         video_transcode.codec = "libx265";
         video_transcode.codec_priv_key = "x265-params";
         video_transcode.codec_priv_value = "keyint=60:min-keyint=60:scenecut=0";
 
-        AdminModel::MediaTypeDescriptionVideoFilter video_filter;
-        video_filter.height = 720;
-        video_filter.width = 1280;
-        video_filter.fps = 30;
-
         AdminModel::MediaTypeDescriptionAVStream video;
         video.transcode.set(std::move(video_transcode));
-        video.filter.set(std::move(video_filter));
 
         AdminModel::MediaTypeDescriptionAVStreamTranscode audio_transcode;
         //audio_transcode.codec = "???";
@@ -281,23 +282,24 @@ bool library::check(vector<string>&& path)
         AdminModel::MediaTypeDescriptionVideoContainer container;
         container.video.set(std::move(video));
         container.audio.set(std::move(audio));
+        container.container_extension = "mp4";
 
         check.types_definitions.insert(container.to_string());
     }
     {
+        AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.height = 1080;
+        video_filter.width = 1920;
+        video_filter.fps = 29;
+
         AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
+        video_transcode.filter.set(std::move(video_filter));
         video_transcode.codec = "libx264";
         video_transcode.codec_priv_key = "x264-params";
         video_transcode.codec_priv_value = "keyint=60:min-keyint=60:scenecut=0:force-cfr=1";
 
-        AdminModel::MediaTypeDescriptionVideoFilter video_filter;
-        video_filter.height = 1080;
-        video_filter.width = 1920;
-        video_filter.fps = 30;
-
         AdminModel::MediaTypeDescriptionAVStream video;
         video.transcode.set(std::move(video_transcode));
-        video.filter.set(std::move(video_filter));
 
         AdminModel::MediaTypeDescriptionAVStreamTranscode audio_transcode;
         audio_transcode.codec = "aac";
@@ -308,6 +310,63 @@ bool library::check(vector<string>&& path)
         AdminModel::MediaTypeDescriptionVideoContainer container;
         container.video.set(std::move(video));
         container.audio.set(std::move(audio));
+        container.container_extension = "mp4";
+
+        check.types_definitions.insert(container.to_string());
+    }
+    {
+        AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.height = 720;
+        video_filter.width = 1280;
+        video_filter.fps = 29;
+
+        AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
+        video_transcode.filter.set(std::move(video_filter));
+        video_transcode.codec = "libx264";
+        video_transcode.codec_priv_key = "x264-params";
+        video_transcode.codec_priv_value = "keyint=60:min-keyint=60:scenecut=0:force-cfr=1";
+
+        AdminModel::MediaTypeDescriptionAVStream video;
+        video.transcode.set(std::move(video_transcode));
+
+        AdminModel::MediaTypeDescriptionAVStreamTranscode audio_transcode;
+        audio_transcode.codec = "aac";
+
+        AdminModel::MediaTypeDescriptionAVStream audio;
+        audio.transcode.set(std::move(audio_transcode));
+
+        AdminModel::MediaTypeDescriptionVideoContainer container;
+        container.video.set(std::move(video));
+        container.audio.set(std::move(audio));
+        container.container_extension = "mp4";
+
+        check.types_definitions.insert(container.to_string());
+    }
+    {
+        AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.height = 360;
+        video_filter.width = 640;
+        video_filter.fps = 29;
+
+        AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
+        video_transcode.filter.set(std::move(video_filter));
+        video_transcode.codec = "libx264";
+        video_transcode.codec_priv_key = "x264-params";
+        video_transcode.codec_priv_value = "keyint=60:min-keyint=60:scenecut=0:force-cfr=1";
+
+        AdminModel::MediaTypeDescriptionAVStream video;
+        video.transcode.set(std::move(video_transcode));
+
+        AdminModel::MediaTypeDescriptionAVStreamTranscode audio_transcode;
+        audio_transcode.codec = "aac";
+
+        AdminModel::MediaTypeDescriptionAVStream audio;
+        audio.transcode.set(std::move(audio_transcode));
+
+        AdminModel::MediaTypeDescriptionVideoContainer container;
+        container.video.set(std::move(video));
+        container.audio.set(std::move(audio));
+        container.container_extension = "mp4";
 
         check.types_definitions.insert(container.to_string());
     }
