@@ -73,6 +73,8 @@ int main(int argc, char** argv)
     meshpp::settings::set_application_name("cloudyd");
     meshpp::settings::set_data_directory(meshpp::config_directory_path().string());
 
+    meshpp::config::set_public_key_prefix("Cloudy-");
+
     beltpp::ip_address admin_bind_to_address;
     beltpp::ip_address storage_bind_to_address;
     string data_directory;
@@ -133,6 +135,8 @@ int main(int argc, char** argv)
 
         cout << "admin bind address: " << admin_bind_to_address.to_string() << endl;
         cout << "storage bind address: " << storage_bind_to_address.to_string() << endl;
+        cout << "private key: " << pv_key.get_base58_wif() << endl;
+        cout << "public key: " << pv_key.get_public_key().to_string() << endl;
 
         beltpp::ilog_ptr plogger_admin = beltpp::console_logger("admin", true);
         //plogger_admin->disable();

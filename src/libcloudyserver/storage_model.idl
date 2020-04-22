@@ -25,13 +25,13 @@ module StorageModel
     class StorageFileRequest
     {
         String uri
-        String storage_order_token
+        String authorization
     }
 
     class StorageFileRangeRequest
     {
         String uri
-        String storage_order_token
+        String authorization
         UInt64 start
         UInt64 count
     }

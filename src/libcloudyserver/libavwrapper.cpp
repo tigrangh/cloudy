@@ -1,5 +1,6 @@
 #include "libavwrapper.hpp"
 #include "admin_model.hpp"
+#include "internal_model.hpp"
 
 #include <mesh.pp/cryptoutility.hpp>
 
@@ -29,6 +30,7 @@ using std::string;
 using beltpp::packet;
 using std::vector;
 using std::unordered_map;
+using std::pair;
 namespace filesystem = boost::filesystem;
 
 namespace libavwrapper
@@ -869,16 +871,17 @@ class DecoderContext;
 class EncoderContext : public Context<EncoderCodecContextDefinition>
 {
 public:
+    size_t option_index = 0;
     string filepath;
     string type_definition_str;
     AVDictionary* muxer_opts = nullptr;
 
     AVFilterGraph *graph;
 
-    bool load(packet&& options,
+    bool load(size_t option_index,
+              packet&& options,
               DecoderContext& decoder,
-              filesystem::path const& output_dir,
-              size_t file_index);
+              filesystem::path const& output_dir);
     bool process(DecoderContext& decoder_context,
                  DataUnit& data_unit);
     bool final(DecoderContext& decoder_context);
@@ -1040,20 +1043,21 @@ bool DecoderContext::next(vector<EncoderContext>& encoder_contexts,
     return true;
 }
 
-bool EncoderContext::load(packet&& options,
+bool EncoderContext::load(size_t option_index_,
+                          packet&& options,
                           DecoderContext& decoder_context,
-                          filesystem::path const& output_dir,
-                          size_t file_index)
+                          filesystem::path const& output_dir)
 {
     if (options.type() != AdminModel::MediaTypeDescriptionVideoContainer::rtt)
         return true;
 
+    option_index = option_index_;
     type_definition_str = options.to_string();
 
     AdminModel::MediaTypeDescriptionVideoContainer container_options;
     std::move(options).get(container_options);
 
-    filepath = (output_dir / (std::to_string(file_index) + "." + container_options.container_extension)).string();
+    filepath = (output_dir / (std::to_string(option_index_) + "." + container_options.container_extension)).string();
 
     avformat_context = format_context_alloc_output(filepath);
     if (nullptr == avformat_context)
@@ -1274,7 +1278,7 @@ transcoder::transcoder()
 {}
 transcoder::~transcoder() = default;
 
-bool transcoder::init(vector<packet>&& options)
+bool transcoder::init(vector<pair<packet, size_t>>&& options)
 {
     if (false == pimpl->decoder.load(input_file.string()))
         return false;
@@ -1282,18 +1286,18 @@ bool transcoder::init(vector<packet>&& options)
     size_t option_index = 0;
     for (auto&& option : options)
     {
-        ++option_index;
-
         EncoderContext encoder_context;
 
-        if (false == encoder_context.load(std::move(option),
+        if (false == encoder_context.load(option_index,
+                                          std::move(option.first),
                                           pimpl->decoder,
-                                          output_dir,
-                                          pimpl->encoders.size()))
+                                          output_dir))
             return false;
 
         if (false == encoder_context.definitions.empty())
             pimpl->encoders.push_back(std::move(encoder_context));
+
+        ++option_index;
     }
 
     state = before_loop;
@@ -1301,27 +1305,31 @@ bool transcoder::init(vector<packet>&& options)
     return true;
 }
 
-bool transcoder::loop(unordered_map<string, media_part>& filename_to_media_part)
+unordered_map<size_t, InternalModel::ProcessMediaCheckResult> transcoder::loop()
 {
-    unordered_map<string, media_part> filename_to_media_part_temp;
+    unordered_map<size_t, InternalModel::ProcessMediaCheckResult> result;
+    unordered_map<size_t, InternalModel::ProcessMediaCheckResult> result_temp;
     DataUnit data_unit;
     data_unit.more_read_packet = true;
 
     while (true)
     {   //  for now this will not actually do chunk by chunk encoding
         if (false == pimpl->decoder.next(pimpl->encoders, data_unit))
-            return false;
+            return result;  //  return false
 
         for (auto& encoder_context : pimpl->encoders)
         {
             if (false == encoder_context.process(pimpl->decoder,
                                                  data_unit))
-                return false;
+                return result;  //  return false
 
             if (false == data_unit.more_read_frame)
-            {   //  flush
-                filename_to_media_part_temp[encoder_context.filepath].type_definition = encoder_context.type_definition_str;
-                filename_to_media_part_temp[encoder_context.filepath].count = encoder_context.definitions.front().duration;
+            {   //  on flush
+                auto& result_item = result_temp[encoder_context.option_index];
+                result_item.count = encoder_context.definitions.front().duration;
+                AdminModel::detail::loader(result_item.type_description, encoder_context.type_definition_str, nullptr);
+                result_item.result_type = InternalModel::ResultType::file;
+                result_item.data_or_file = encoder_context.filepath;
             }
         }
 
@@ -1332,8 +1340,8 @@ bool transcoder::loop(unordered_map<string, media_part>& filename_to_media_part)
             break;
     }
 
-    filename_to_media_part = std::move(filename_to_media_part_temp);
-    return true;
+    result = std::move(result_temp);
+    return result;
 }
 
 bool transcoder::clean()
@@ -1346,14 +1354,18 @@ bool transcoder::clean()
     return true;
 }
 
-void transcoder::run(unordered_map<string, media_part>& filename_to_media_part)
+unordered_map<size_t, InternalModel::ProcessMediaCheckResult>
+transcoder::run()
 {
-    if (before_loop == state &&
-        loop(filename_to_media_part))
+    unordered_map<size_t, InternalModel::ProcessMediaCheckResult> result;
+    if (before_loop == state)
     {
+        result = loop();
         state = done;
     }
-    else if (done == state)
+    if (done == state)
         clean();
+
+    return result;
 }
 }

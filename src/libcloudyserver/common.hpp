@@ -19,7 +19,6 @@ size_t const http_enough_length = 10 * 1024;
 size_t const http_header_max_size = 64 * 1024;
 size_t const http_content_max_size = 10 * 1024 * 1024;
 
-size_t const storage_order_sign_seconds = 3600;
 size_t const storage_order_sign_instant_precision = 60;
 
 std::string const worker_peerid = "worker";
@@ -35,7 +34,6 @@ beltpp::void_unique_ptr get_internal_putl();
 bool verify_storage_order(std::string const& storage_order_token,
                           std::string& channel_address,
                           std::string& file_uri,
-                          std::string& content_unit_uri,
                           std::string& session_id,
                           uint64_t& seconds,
                           std::chrono::system_clock::time_point& tp);

@@ -35,6 +35,7 @@ using std::unordered_set;
 using std::unordered_map;
 using std::unique_ptr;
 using std::vector;
+using std::pair;
 
 namespace filesystem = boost::filesystem;
 
@@ -68,7 +69,7 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
             InternalModel::ProcessIndexResult response;
             response.path = request.path;
             response.sha256sum = meshpp::hash(begin, end);
-            response.types_definitions = request.types_definitions;
+            response.type_descriptions = request.type_descriptions;
 
             result.set(std::move(response));
         }
@@ -76,7 +77,7 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
         {
             InternalModel::ProcessIndexError response;
             response.path = request.path;
-            response.types_definitions = request.types_definitions;
+            response.type_descriptions = request.type_descriptions;
             response.reason = ex.what();
 
             result.set(std::move(response));
@@ -93,59 +94,81 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
         {
             std::move(package).get(request);
 
+            vector<pair<packet, size_t>> full_progress;
+            full_progress.resize(request.type_descriptions.size());
+
+            size_t index = 0;
+            for (auto const& type_description_str : request.type_descriptions)
+            {
+                auto& progress_item = full_progress[index];
+                AdminModel::detail::loader(progress_item.first, type_description_str, nullptr);
+                progress_item.second = 0;
+                ++index;
+            }
+
             libavwrapper::transcoder transcoder;
             transcoder.input_file = check_path(request.path).first;
             transcoder.output_dir = request.output_dir;
+            transcoder.init(std::move(full_progress));
 
-            vector<packet> options;
-            for (auto& type_definition_str : request.types_definitions)
+            while (true)
             {
-                packet type_definition;
-                AdminModel::detail::loader(type_definition, type_definition_str, nullptr);
-                options.push_back(std::move(type_definition));
-            }
+                auto transcoder_progress = transcoder.run();
 
-            transcoder.init(std::move(options));
-            size_t accumulate_count = 0;
-            size_t count = 0;
-            do
-            {
-                unordered_map<string, libavwrapper::media_part> filename_to_type_definition;
-                transcoder.run(filename_to_type_definition);
+                bool no_progress = true;
 
-                if (false == filename_to_type_definition.empty())
+                size_t option_index = 0;
+                for (auto& progress_item : full_progress)
                 {
-                    count = filename_to_type_definition.begin()->second.count;
-
-                    for (auto const& ftod : filename_to_type_definition)
+                    if (progress_item.first.type() == AdminModel::MediaTypeDescriptionRaw::rtt)
                     {
-                        InternalModel::ProcessMediaCheckResult response;
+                        InternalModel::ProcessMediaCheckResult raw_progress_item;
 
-                        response.path = request.path;
-                        response.count = count;
-                        response.accumulated = accumulate_count;
+                        auto src_location = join_path(request.path).first;
+                        filesystem::path copy_location = request.output_dir;
+                        copy_location /= std::to_string(option_index);
+                        boost::system::error_code ec;
+                        filesystem::copy(src_location,
+                                         copy_location,
+                                         ec);
+                        if (ec)
+                            throw std::runtime_error("processor_worker: filesystem::copy(" +
+                                                     src_location + ", " +
+                                                     copy_location.string() + ")");
 
-                        AdminModel::detail::loader(response.type, ftod.second.type_definition, nullptr);
+                        raw_progress_item.count = 1;
+                        raw_progress_item.path = request.path;
+                        raw_progress_item.type_description = std::move(progress_item.first);
+                        raw_progress_item.result_type = InternalModel::ResultType::file;
+                        raw_progress_item.data_or_file = copy_location.string();
 
-                        response.result_type = InternalModel::ResultType::file;
-                        response.data_or_file = ftod.first;
-
-                        stream.send(packet(std::move(response)));
+                        stream.send(packet(std::move(raw_progress_item)));
+                        no_progress = false;
                     }
-                }
-                else
-                {
-                    count = 0;
+                    else if (transcoder_progress.count(option_index))
+                    {
+                        auto& transcoder_progress_item = transcoder_progress[option_index];
+                        transcoder_progress_item.path = request.path;
+                        transcoder_progress_item.accumulated = progress_item.second;
 
+                        progress_item.second += transcoder_progress_item.count;
+
+                        stream.send(packet(std::move(transcoder_progress_item)));
+                        no_progress = false;
+                    }
+
+                    ++option_index;
+                }
+
+                if (no_progress)
+                {
                     InternalModel::ProcessMediaCheckResult response;
                     response.path = request.path;
 
                     stream.send(packet(std::move(response)));
+                    break;
                 }
-
-                accumulate_count += count;
             }
-            while (count);
         }
         catch (...)
         {

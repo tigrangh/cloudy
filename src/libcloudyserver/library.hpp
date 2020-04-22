@@ -24,7 +24,6 @@ class ProcessMediaCheckResult;
 }
 namespace AdminModel
 {
-class MediaDefinition;
 class IndexListResponse;
 }
 
@@ -51,21 +50,22 @@ public:
     void add(InternalModel::ProcessMediaCheckResult&& progress_item,
              std::string const& uri,
              std::string const& sha256sum);
+    std::unordered_set<std::string> delete_library(std::vector<std::string> const& path);
 
-    bool index(std::vector<std::string>&& path);
+    bool index(std::vector<std::string>&& path, std::unordered_set<std::string>&& type_descriptions);
     std::vector<std::pair<std::vector<std::string>, std::unordered_set<std::string>>> process_index();
     std::unordered_set<std::string>
     process_index_store_hash(std::vector<std::string> const& path,
-                             std::unordered_set<std::string> const& types_definitions,
+                             std::unordered_set<std::string> const& type_descriptions,
                              std::string const& sha256sum);
     std::string process_index_retrieve_hash(std::vector<std::string> const& path) const;
     void process_index_update(std::vector<std::string> const& path,
-                              std::unordered_set<std::string> const& types_definitions_find,
-                              std::unordered_set<std::string> const& types_definitions_replace);
+                              std::unordered_set<std::string> const& type_descriptions_find,
+                              std::unordered_set<std::string> const& type_descriptions_replace);
     void process_index_done(std::vector<std::string> const& path,
-                            std::unordered_set<std::string> const& types_definitions);
+                            std::unordered_set<std::string> const& type_descriptions);
 
-    bool check(std::vector<std::string>&& path, std::unordered_set<std::string>&& types_definitions);
+    bool check(std::vector<std::string>&& path, std::unordered_set<std::string>&& type_descriptions);
     std::vector<InternalModel::ProcessMediaCheckRequest> process_check();
 
     std::unordered_set<std::string>
@@ -73,6 +73,8 @@ public:
                        std::string const& uri);
 
     AdminModel::IndexListResponse list_index(std::string const& sha256sum) const;
+    std::unordered_set<std::string> delete_index(std::string const& sha256sum,
+                                                 std::vector<std::string> const& only_path = std::vector<std::string>());
 private:
     std::unique_ptr<detail::library_internal> m_pimpl;
 };

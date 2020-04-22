@@ -65,6 +65,15 @@ inline string response_index(beltpp::detail::session_special_data& ssd,
     else
         return beltpp::http::http_internal_server_error(ssd, pc.to_string());
 }
+inline
+string response_authorization(beltpp::detail::session_special_data& ssd,
+                              beltpp::packet const& pc)
+{
+    if (pc.type() == SignedStorageAuthorization::rtt)
+        return beltpp::http::http_response(ssd, meshpp::to_base64(pc.to_string(), false));
+    else
+        return beltpp::http::http_internal_server_error(ssd, pc.to_string());
+}
 
 template <beltpp::detail::pmsg_all (*fallback_message_list_load)(
         std::string::const_iterator&,
@@ -167,6 +176,19 @@ beltpp::detail::pmsg_all message_list_load(
                                               std::move(p),
                                               &IndexGet::pvoid_saver);
         }
+        else if (ss.type == beltpp::http::detail::scan_status::del &&
+                 2 == ss.resource.path.size() &&
+                 ss.resource.path.front() == "index")
+        {
+            ssd.session_specal_handler = &response_index;
+            auto p = ::beltpp::new_void_unique_ptr<IndexDelete>();
+            IndexDelete& ref = *reinterpret_cast<IndexDelete*>(p.get());
+            ref.sha256sum = ss.resource.path.back();
+
+            return ::beltpp::detail::pmsg_all(IndexDelete::rtt,
+                                              std::move(p),
+                                              &IndexDelete::pvoid_saver);
+        }
         else if (ss.type == beltpp::http::detail::scan_status::get &&
                  false == ss.resource.path.empty() &&
                  ss.resource.path.front() == "library")
@@ -183,6 +205,7 @@ beltpp::detail::pmsg_all message_list_load(
         }
         else if (ss.type == beltpp::http::detail::scan_status::put &&
                  false == ss.resource.path.empty() &&
+                 false == posted.empty() &&
                  ss.resource.path.front() == "library")
         {
             ssd.session_specal_handler = &response_library;
@@ -191,9 +214,26 @@ beltpp::detail::pmsg_all message_list_load(
             for (size_t index = 1; index != ss.resource.path.size(); ++index)
                 ref.path.push_back(ss.resource.path[index]);
 
+
+            AdminModel::detail::loader(ref.type_descriptions, posted, nullptr);
+
             return ::beltpp::detail::pmsg_all(LibraryPut::rtt,
                                               std::move(p),
                                               &LibraryPut::pvoid_saver);
+        }
+        else if (ss.type == beltpp::http::detail::scan_status::del &&
+                 false == ss.resource.path.empty() &&
+                 ss.resource.path.front() == "library")
+        {
+            ssd.session_specal_handler = &response_library;
+            auto p = ::beltpp::new_void_unique_ptr<LibraryDelete>();
+            LibraryDelete& ref = *reinterpret_cast<LibraryDelete*>(p.get());
+            for (size_t index = 1; index != ss.resource.path.size(); ++index)
+                ref.path.push_back(ss.resource.path[index]);
+
+            return ::beltpp::detail::pmsg_all(LibraryDelete::rtt,
+                                              std::move(p),
+                                              &LibraryDelete::pvoid_saver);
         }
         else if (ss.type == beltpp::http::detail::scan_status::get &&
                  ss.resource.path.size() == 1 &&
@@ -221,6 +261,23 @@ beltpp::detail::pmsg_all message_list_load(
             return ::beltpp::detail::pmsg_all(LogDelete::rtt,
                                               std::move(p),
                                               &LogDelete::pvoid_saver);
+        }
+        else if (ss.type == beltpp::http::detail::scan_status::get &&
+                 ss.resource.path.size() == 1 &&
+                 ss.resource.path.front() == "authorization")
+        {
+            ssd.session_specal_handler = &response_authorization;
+            auto p = ::beltpp::new_void_unique_ptr<StorageAuthorization>();
+            StorageAuthorization& ref = *reinterpret_cast<StorageAuthorization*>(p.get());
+
+            size_t pos = 0;
+            ref.seconds = beltpp::stoui64(ss.resource.arguments["seconds"], pos);
+            ref.file_uri = ss.resource.arguments["file"];
+            ref.session_id = ss.resource.arguments["session_id"];
+
+            return ::beltpp::detail::pmsg_all(StorageAuthorization::rtt,
+                                              std::move(p),
+                                              &StorageAuthorization::pvoid_saver);
         }
         else if (ss.type == beltpp::http::detail::scan_status::get &&
                  ss.resource.path.size() == 1 &&

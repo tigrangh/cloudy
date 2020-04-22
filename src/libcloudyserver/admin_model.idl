@@ -14,6 +14,11 @@ module AdminModel
         String sha256sum
     }
 
+    class IndexDelete
+    {
+        String sha256sum
+    }
+
     // LibraryIndex is used as IndexResponse
 
     class LibraryGet
@@ -22,6 +27,12 @@ module AdminModel
     }
 
     class LibraryPut
+    {
+        Array String path
+        Array Object type_descriptions // MediaTypeDescriptionVideoContainer, MediaTypeDescriptionRaw
+    }
+
+    class LibraryDelete
     {
         Array String path
     }
@@ -74,6 +85,26 @@ module AdminModel
         String reason
     }
 
+    class StorageAuthorization
+    {
+        String file_uri
+        String session_id
+        UInt64 seconds
+        TimePoint time_point
+    }
+
+    class SignedStorageAuthorization
+    {
+        StorageAuthorization token
+        Authority authorization
+    }
+
+    class Authority
+    {
+        String address
+        String signature
+    }
+
     class MediaSequence
     {
         Array MediaFrame frames
@@ -83,14 +114,37 @@ module AdminModel
         UInt64 count
         String uri
     }
-    class MediaDefinition
-    {
-        Array MediaTypeDefinition types_definitions
-    }
+
     class MediaTypeDefinition
     {
-        Object type // MediaTypeDescriptionVideoContainer
+        Object type_description // MediaTypeDescriptionVideoContainer, MediaTypeDescriptionRaw
         MediaSequence sequence
+    }
+
+    class LibraryIndex
+    {
+        Array Array String paths
+        Array MediaTypeDefinition type_definitions
+    }
+
+    class RemoteError
+    {
+        String message
+    }
+
+    class MediaTypeDescriptionVideoContainer
+    {
+        Object audio// MediaTypeDescriptionAVStream
+        Object video// MediaTypeDescriptionAVStream
+
+        String muxer_opt_key
+        String muxer_opt_value
+        String container_extension
+    }
+
+    class MediaTypeDescriptionAVStream
+    {
+        Object transcode// MediaTypeDescriptionAVStreamTranscode
     }
 
     class MediaTypeDescriptionAVStreamTranscode
@@ -107,31 +161,11 @@ module AdminModel
         UInt64 width
         UInt64 fps
     }
+    //  MediaTypeDescriptionVideoContainer related stuff ends here
 
-    class MediaTypeDescriptionAVStream
+    class MediaTypeDescriptionRaw
     {
-        Object transcode// MediaTypeDescriptionAVStreamTranscode
-    }
-
-    class MediaTypeDescriptionVideoContainer
-    {
-        Object audio// MediaTypeDescriptionAVStream
-        Object video// MediaTypeDescriptionAVStream
-
-        String muxer_opt_key
-        String muxer_opt_value
-        String container_extension
-    }
-
-    class LibraryIndex
-    {
-        Set String paths
-        MediaDefinition media_definition
-    }
-
-    class RemoteError
-    {
-        String message
+        String mime_type
     }
 }
 ////2

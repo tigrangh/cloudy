@@ -9,17 +9,15 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 
+namespace InternalModel
+{
+class ProcessMediaCheckResult;
+}
 namespace libavwrapper
 {
 class transcoder_detail;
-
-class media_part
-{
-public:
-    size_t count = 0;
-    std::string type_definition;
-};
 
 class transcoder
 {
@@ -29,7 +27,7 @@ private:
     e_state state = before_init;
     std::unique_ptr<transcoder_detail> pimpl;
 
-    bool loop(std::unordered_map<std::string, media_part>& filename_to_media_part);
+    std::unordered_map<size_t, InternalModel::ProcessMediaCheckResult> loop();
     bool clean();
 public:
     transcoder();
@@ -37,7 +35,7 @@ public:
     boost::filesystem::path input_file;
     boost::filesystem::path output_dir;
 
-    bool init(std::vector<beltpp::packet>&& options);
-    void run(std::unordered_map<std::string, media_part>& filename_to_media_part);
+    bool init(std::vector<std::pair<beltpp::packet, size_t>>&& options);
+    std::unordered_map<size_t, InternalModel::ProcessMediaCheckResult> run();
 };
 }

@@ -50,28 +50,23 @@ beltpp::void_unique_ptr get_internal_putl()
 bool verify_storage_order(string const& storage_order_token,
                           string& channel_address,
                           string& file_uri,
-                          string& content_unit_uri,
                           string& session_id,
                           uint64_t& seconds,
                           chrono::system_clock::time_point& tp)
 {
-    InternalModel::SignedStorageOrder msg_verfy_sig_storage_order;
+    AdminModel::SignedStorageAuthorization msg_verfy_sig_storage_order;
 
     msg_verfy_sig_storage_order.from_string(meshpp::from_base64(storage_order_token), nullptr);
 
     channel_address = msg_verfy_sig_storage_order.authorization.address;
-    file_uri = msg_verfy_sig_storage_order.order.file_uri;
-    content_unit_uri = msg_verfy_sig_storage_order.order.content_unit_uri;
-    session_id = msg_verfy_sig_storage_order.order.session_id;
-    seconds = msg_verfy_sig_storage_order.order.seconds;
-    tp = chrono::system_clock::from_time_t(msg_verfy_sig_storage_order.order.time_point.tm);
-
-    if (msg_verfy_sig_storage_order.order.seconds != storage_order_sign_seconds)
-        return false;
+    file_uri = msg_verfy_sig_storage_order.token.file_uri;
+    session_id = msg_verfy_sig_storage_order.token.session_id;
+    seconds = msg_verfy_sig_storage_order.token.seconds;
+    tp = chrono::system_clock::from_time_t(msg_verfy_sig_storage_order.token.time_point.tm);
 
     auto now = chrono::system_clock::now();
-    auto signed_time_point = chrono::system_clock::from_time_t(msg_verfy_sig_storage_order.order.time_point.tm);
-    auto expiring_time_point = signed_time_point + chrono::seconds(msg_verfy_sig_storage_order.order.seconds);
+    auto signed_time_point = chrono::system_clock::from_time_t(msg_verfy_sig_storage_order.token.time_point.tm);
+    auto expiring_time_point = signed_time_point + chrono::seconds(msg_verfy_sig_storage_order.token.seconds);
 
     if (signed_time_point > now + chrono::seconds(storage_order_sign_instant_precision) ||
         expiring_time_point <= now - chrono::seconds(storage_order_sign_instant_precision))
@@ -79,7 +74,7 @@ bool verify_storage_order(string const& storage_order_token,
 
     bool correct = meshpp::verify_signature(
                        msg_verfy_sig_storage_order.authorization.address,
-                       msg_verfy_sig_storage_order.order.to_string(),
+                       msg_verfy_sig_storage_order.token.to_string(),
                        msg_verfy_sig_storage_order.authorization.signature);
 
     if (false == correct)

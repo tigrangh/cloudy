@@ -220,7 +220,7 @@ beltpp::detail::pmsg_all message_list_load(
                 auto p = ::beltpp::new_void_unique_ptr<StorageModel::StorageFileRangeRequest>();
                 StorageModel::StorageFileRangeRequest& ref = *reinterpret_cast<StorageModel::StorageFileRangeRequest*>(p.get());
                 ref.uri = ss.resource.arguments["file"];
-                ref.storage_order_token = ss.resource.arguments["storage_order_token"];
+                ref.authorization = ss.resource.arguments["authorization"];
                 ref.start = range_start;
                 ref.count = range_count;
                 return ::beltpp::detail::pmsg_all(StorageModel::StorageFileRangeRequest::rtt,
@@ -234,7 +234,7 @@ beltpp::detail::pmsg_all message_list_load(
                 auto p = ::beltpp::new_void_unique_ptr<StorageModel::StorageFileRequest>();
                 StorageModel::StorageFileRequest& ref = *reinterpret_cast<StorageModel::StorageFileRequest*>(p.get());
                 ref.uri = ss.resource.arguments["file"];
-                ref.storage_order_token = ss.resource.arguments["storage_order_token"];
+                ref.authorization = ss.resource.arguments["authorization"];
                 return ::beltpp::detail::pmsg_all(StorageModel::StorageFileRequest::rtt,
                                                   std::move(p),
                                                   &StorageModel::StorageFileRequest::pvoid_saver);

@@ -154,16 +154,24 @@ void library::add(ProcessMediaCheckResult&& progress_item,
             m_pimpl->library_index.insert(sha256sum, AdminModel::LibraryIndex());
 
             AdminModel::LibraryIndex& index_item = m_pimpl->library_index.at(sha256sum);
-            index_item.paths.insert(path_string);
-
-            if (false == progress_item.type.empty())
+            unordered_set<string> set_existing_paths;
+            for (auto const& existing_path_item : index_item.paths)
             {
-                AdminModel::MediaDefinition& media_definition = index_item.media_definition;
+                string str_path_item = join_path(existing_path_item).first;
+                set_existing_paths.insert(str_path_item);
+            }
+
+            if (0 == set_existing_paths.count(path_string))
+                index_item.paths.push_back(progress_item.path);
+
+            if (false == progress_item.type_description.empty())
+            {
+                vector<AdminModel::MediaTypeDefinition>& type_definitions = index_item.type_definitions;
 
                 AdminModel::MediaTypeDefinition* media_type_definition = nullptr;
-                for (auto& item : media_definition.types_definitions)
+                for (auto& item : type_definitions)
                 {
-                    if (item.type.to_string() == progress_item.type.to_string())
+                    if (item.type_description.to_string() == progress_item.type_description.to_string())
                     {
                         media_type_definition = &item;
                         break;
@@ -171,9 +179,9 @@ void library::add(ProcessMediaCheckResult&& progress_item,
                 }
                 if (nullptr == media_type_definition)
                 {
-                    media_definition.types_definitions.push_back(AdminModel::MediaTypeDefinition());
-                    media_type_definition = &media_definition.types_definitions.back();
-                    media_type_definition->type = std::move(progress_item.type);
+                    type_definitions.push_back(AdminModel::MediaTypeDefinition());
+                    media_type_definition = &type_definitions.back();
+                    media_type_definition->type_description = std::move(progress_item.type_description);
                 }
 
                 uint64_t accumulated = 0;
@@ -205,13 +213,36 @@ void library::add(ProcessMediaCheckResult&& progress_item,
             progress_item.path.pop_back();
     }
 }
+unordered_set<string> library::delete_library(vector<string> const& path)
+{
+    unordered_set<string> uris;
+    string path_string = join_path(path).first;
 
-bool library::index(vector<string>&& path)
+    if (m_pimpl->library_tree.contains(path_string))
+    {
+        auto& item = m_pimpl->library_tree.at(path_string);
+        auto checksums = item.checksums;
+
+        for (auto const& checksum : checksums)
+        {
+            auto uris_local = delete_index(checksum, path);
+            for (auto const& uri : uris_local)
+                uris.insert(uri);
+        }
+    }
+
+    return uris;
+}
+
+bool library::index(vector<string>&& path,
+                    std::unordered_set<std::string>&& type_descriptions)
 {
     string path_string = join_path(path).first;
 
     PendingForIndexItem item;
     item.path = std::move(path);
+    item.type_descriptions = std::move(type_descriptions);
+#if 0
     if (false)
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
@@ -239,7 +270,7 @@ bool library::index(vector<string>&& path)
         container.audio.set(std::move(audio));
         container.container_extension = "mp4";
 
-        item.types_definitions.insert(container.to_string());
+        item.type_descriptions.insert(container.to_string());
     }
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
@@ -267,7 +298,7 @@ bool library::index(vector<string>&& path)
         container.audio.set(std::move(audio));
         container.container_extension = "mp4";
 
-        item.types_definitions.insert(container.to_string());
+        item.type_descriptions.insert(container.to_string());
     }
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
@@ -295,7 +326,7 @@ bool library::index(vector<string>&& path)
         container.audio.set(std::move(audio));
         container.container_extension = "mp4";
 
-        item.types_definitions.insert(container.to_string());
+        item.type_descriptions.insert(container.to_string());
     }
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
@@ -323,20 +354,21 @@ bool library::index(vector<string>&& path)
         container.audio.set(std::move(audio));
         container.container_extension = "mp4";
 
-        item.types_definitions.insert(container.to_string());
+        item.type_descriptions.insert(container.to_string());
     }
+#endif
 
     auto& pending_items = m_pimpl->pending_for_index->items;
     for (auto const& pending_item : pending_items)
     {
         if (pending_item.path == item.path)
         {
-            for (auto const& pending_item_type : pending_item.types_definitions)
-                item.types_definitions.erase(pending_item_type);
+            for (auto const& pending_item_type : pending_item.type_descriptions)
+                item.type_descriptions.erase(pending_item_type);
         }
     }
 
-    if (item.types_definitions.empty())
+    if (item.type_descriptions.empty())
         return false;
 
     pending_items.push_back(std::move(item));
@@ -359,7 +391,7 @@ vector<pair<vector<string>, unordered_set<string>>> library::process_index()
             ++m_pimpl->processing_for_index;
 
             result.push_back(std::make_pair(pending_items[index].path,
-                                            pending_items[index].types_definitions));
+                                            pending_items[index].type_descriptions));
         }
     }
 
@@ -367,28 +399,28 @@ vector<pair<vector<string>, unordered_set<string>>> library::process_index()
 }
 
 unordered_set<string> library::process_index_store_hash(vector<string> const& path,
-                                                        unordered_set<string> const& types_definitions,
+                                                        unordered_set<string> const& type_descriptions,
                                                         string const& sha256sum)
 {
-    auto types_definitions_temp = types_definitions;
+    auto type_descriptions_temp = type_descriptions;
 
     auto& items = m_pimpl->pending_for_index->items;
     size_t count = 0;
     for (auto& item : items)
     {
         if (item.path == path &&
-            item.types_definitions == types_definitions &&
+            item.type_descriptions == type_descriptions &&
             count < m_pimpl->processing_for_index)
             item.sha256sum = sha256sum;
         else if (item.sha256sum == sha256sum)
         {
-            for (auto const& type : item.types_definitions)
-                types_definitions_temp.erase(type);
+            for (auto const& type : item.type_descriptions)
+                type_descriptions_temp.erase(type);
         }
         ++count;
     }
 
-    return types_definitions_temp;
+    return type_descriptions_temp;
 }
 
 string library::process_index_retrieve_hash(vector<string> const& path) const
@@ -403,18 +435,18 @@ string library::process_index_retrieve_hash(vector<string> const& path) const
 }
 
 void library::process_index_update(vector<string> const& path,
-                                   unordered_set<string> const& types_definitions_find,
-                                   unordered_set<string> const& types_definitions_replace)
+                                   unordered_set<string> const& type_descriptions_find,
+                                   unordered_set<string> const& type_descriptions_replace)
 {
     size_t count = 0;
     auto& items = m_pimpl->pending_for_index->items;
     for (auto& item : items)
     {
         if (item.path == path &&
-            item.types_definitions == types_definitions_find &&
+            item.type_descriptions == type_descriptions_find &&
             count < m_pimpl->processing_for_index)
         {
-            item.types_definitions = types_definitions_replace;
+            item.type_descriptions = type_descriptions_replace;
             return;
         }
     }
@@ -423,7 +455,7 @@ void library::process_index_update(vector<string> const& path,
 }
 
 void library::process_index_done(vector<string> const& path,
-                                 unordered_set<string> const& types_definitions)
+                                 unordered_set<string> const& type_descriptions)
 {
     --m_pimpl->processing_for_index;
 
@@ -432,7 +464,7 @@ void library::process_index_done(vector<string> const& path,
     {
         auto& item = items[index];
         if (item.path == path &&
-            item.types_definitions == types_definitions)
+            item.type_descriptions == type_descriptions)
         {
             items.erase(items.begin() + index);
             return;
@@ -442,27 +474,27 @@ void library::process_index_done(vector<string> const& path,
     throw std::logic_error("library::process_index_done");
 }
 
-bool library::check(vector<string>&& path, unordered_set<string>&& types_definitions)
+bool library::check(vector<string>&& path, unordered_set<string>&& type_descriptions)
 {
-    auto types_definitions_temp = types_definitions;
+    auto type_descriptions_temp = type_descriptions;
 
     auto& pending_items = m_pimpl->pending_for_media_check->items;
     for (auto const& pending_item : pending_items)
     {
         if (pending_item.path == path)
         {
-            for (auto const& pending_item_type : pending_item.types_definitions)
-                types_definitions_temp.erase(pending_item_type);
+            for (auto const& pending_item_type : pending_item.type_descriptions)
+                type_descriptions_temp.erase(pending_item_type);
         }
     }
 
-    if (types_definitions_temp.empty())
+    if (type_descriptions_temp.empty())
         return false;
 
     ProcessMediaCheckRequest check;
     check.path = std::move(path);
-    check.types_definitions = std::move(types_definitions_temp);
-    process_index_update(check.path, types_definitions, check.types_definitions);
+    check.type_descriptions = std::move(type_descriptions_temp);
+    process_index_update(check.path, type_descriptions, check.type_descriptions);
     pending_items.push_back(check);
 
     return true;
@@ -501,7 +533,7 @@ library::process_check_done(ProcessMediaCheckResult&& progress_item,
         {
             if (0 == progress_item.count)
             {
-                auto result = std::move(item.types_definitions);
+                auto result = std::move(item.type_descriptions);
                 items.erase(it_item);
                 m_pimpl->processing_for_check = false;
 
@@ -542,6 +574,69 @@ AdminModel::IndexListResponse library::list_index(std::string const& sha256sum) 
     }
 
     return result;
+}
+
+unordered_set<string> library::delete_index(string const& sha256sum,
+                                            vector<string> const& only_path)
+{
+    unordered_set<string> uris;
+
+    if (m_pimpl->library_index.contains(sha256sum))
+    {
+        AdminModel::LibraryIndex& index_item = m_pimpl->library_index.at(sha256sum);
+
+        for (size_t path_index = index_item.paths.size() - 1;
+             path_index < index_item.paths.size();
+             --path_index)
+        {
+            auto& index_item_path = index_item.paths[path_index];
+
+            if (false == only_path.empty() && index_item_path != only_path)
+                continue;
+
+            string child;
+
+            while (false == index_item_path.empty())
+            {
+                string item_path_string = join_path(index_item_path).first;
+
+                if (m_pimpl->library_tree.contains(item_path_string))
+                {
+                    auto& item = m_pimpl->library_tree.at(item_path_string);
+
+                    if (child.empty())
+                        item.checksums.erase(sha256sum);
+                    else
+                        item.names.erase(child);
+
+                    if (item.names.empty() &&
+                        item.checksums.empty())
+                    {
+                        m_pimpl->library_tree.erase(item_path_string);
+                        child = index_item_path.back();
+                        index_item_path.pop_back();
+                    }
+                    else
+                        break;
+                }
+            }
+
+            index_item.paths.erase(index_item.paths.begin() + path_index);
+        }
+
+        if (index_item.paths.empty())
+        {
+            for (auto& type_definition : index_item.type_definitions)
+            {
+                for (auto& frame : type_definition.sequence.frames)
+                    uris.insert(frame.uri);
+            }
+
+            m_pimpl->library_index.erase(sha256sum);
+        }
+    }
+
+    return uris;
 }
 
 }

@@ -20,6 +20,7 @@
 #include <chrono>
 #include <vector>
 #include <utility>
+#include <unordered_set>
 
 namespace cloudy
 {
@@ -34,6 +35,7 @@ using beltpp::timer;
 
 namespace filesystem = boost::filesystem;
 
+using std::unordered_set;
 using std::unique_ptr;
 namespace chrono = std::chrono;
 using std::vector;
@@ -139,12 +141,22 @@ public:
         if (pending_data.count &&
             false == data.empty())
         {
+            string str_mime_type;
+            if (pending_data.type_description.type() == AdminModel::MediaTypeDescriptionVideoContainer::rtt)
+                str_mime_type = mime_type<AdminModel::MediaTypeDescriptionVideoContainer>();
+            else if (pending_data.type_description.type() == AdminModel::MediaTypeDescriptionRaw::rtt)
+            {
+                AdminModel::MediaTypeDescriptionRaw const* pdesc;
+                pending_data.type_description.get(pdesc);
+                str_mime_type = pdesc->mime_type;
+            }
+
             if (pending_data.result_type == InternalModel::ResultType::data)
             {
                 StorageModel::StorageFile file;
                 file.data = std::move(data);
 
-                file.mime_type = mime_type<AdminModel::MediaTypeDescriptionVideoContainer>();
+                file.mime_type = str_mime_type;
                 ptr_direct_stream->send(storage_peerid, packet(std::move(file)));
             }
             else
@@ -152,7 +164,7 @@ public:
                 StorageModel::StorageFileAdd file;
                 file.file = std::move(data);
 
-                file.mime_type = mime_type<AdminModel::MediaTypeDescriptionVideoContainer>();
+                file.mime_type = str_mime_type;
                 ptr_direct_stream->send(storage_peerid, packet(std::move(file)));
             }
             pending_for_storage.push_back(std::move(pending_data));
@@ -206,10 +218,10 @@ public:
     {
         auto path = progress_info.path;
 
-        auto types_definitions =
+        auto type_descriptions =
                 library.process_check_done(std::move(progress_info),
                                            uri);
-        bool final_progress_for_path = (false == types_definitions.empty());
+        bool final_progress_for_path = (false == type_descriptions.empty());
 
         if (final_progress_for_path)
         {
@@ -219,9 +231,9 @@ public:
 
             bool detected = false;
             AdminModel::IndexListResponse index_list = library.list_index(sha256sum);
-            for (auto const& existing : index_list.list_index[sha256sum].media_definition.types_definitions)
+            for (auto const& existing : index_list.list_index[sha256sum].type_definitions)
             {
-                if (types_definitions.count(existing.type.to_string()))
+                if (type_descriptions.count(existing.type_description.to_string()))
                     detected = true;
             }
 
@@ -243,7 +255,7 @@ public:
                 log->log.push_back(packet(std::move(done)));
             }
 
-            library.process_index_done(path, types_definitions);
+            library.process_index_done(path, type_descriptions);
         }
         else if (uri.empty())
         {
@@ -308,7 +320,7 @@ void admin_server::run(bool& stop_check)
             m_pimpl->writeln_node(join_path(path.first).first + " processing for index");
             InternalModel::ProcessIndexRequest request;
             request.path = std::move(path.first);
-            request.types_definitions = path.second;
+            request.type_descriptions = path.second;
             m_pimpl->ptr_direct_stream->send(worker_peerid, packet(request));
         }
     }
@@ -385,6 +397,24 @@ void admin_server::run(bool& stop_check)
                 stream.send(peerid, packet(std::move(response)));
                 break;
             }
+            case IndexDelete::rtt:
+            {
+                IndexDelete request;
+                std::move(received_packet).get(request);
+
+                auto uris = m_pimpl->library.delete_index(request.sha256sum);
+                stream.send(peerid, packet(LibraryIndex()));
+
+                for (auto const& uri : uris)
+                {
+                    //  need to fix this by checking if other items use this uri too
+                    StorageModel::StorageFileDelete storage_request;
+                    storage_request.uri = uri;
+                    m_pimpl->ptr_direct_stream->send(storage_peerid, packet(std::move(storage_request)));
+                }
+
+                break;
+            }
             case LibraryGet::rtt:
             {
                 LibraryGet request;
@@ -396,7 +426,6 @@ void admin_server::run(bool& stop_check)
             case LibraryPut::rtt:
             {
                 LibraryPut request;
-
                 std::move(received_packet).get(request);
 
                 if (false == request.path.empty())
@@ -404,7 +433,11 @@ void admin_server::run(bool& stop_check)
                     auto path_copy = request.path;
                     auto str_path = join_path(request.path).first;
 
-                    if (m_pimpl->library.index(std::move(path_copy)))
+                    unordered_set<string> type_descriptions;
+                    for (auto const& type_description : request.type_descriptions)
+                        type_descriptions.insert(type_description.to_string());
+
+                    if (m_pimpl->library.index(std::move(path_copy), std::move(type_descriptions)))
                         m_pimpl->writeln_node(str_path + " scheduling for index");
                     else
                     {
@@ -418,6 +451,31 @@ void admin_server::run(bool& stop_check)
                     request.path.pop_back();
                 }
                 stream.send(peerid, packet(m_pimpl->library.list(request.path)));
+
+                break;
+            }
+            case LibraryDelete::rtt:
+            {
+                LibraryDelete request;
+                std::move(received_packet).get(request);
+
+                unordered_set<string> uris;
+
+                if (false == request.path.empty())
+                {
+                    uris = m_pimpl->library.delete_library(request.path);
+                    request.path.pop_back();
+                }
+
+                stream.send(peerid, packet(m_pimpl->library.list(request.path)));
+
+                for (auto const& uri : uris)
+                {
+                    //  need to fix this by checking if other items use this uri too
+                    StorageModel::StorageFileDelete storage_request;
+                    storage_request.uri = uri;
+                    m_pimpl->ptr_direct_stream->send(storage_peerid, packet(std::move(storage_request)));
+                }
 
                 break;
             }
@@ -438,6 +496,22 @@ void admin_server::run(bool& stop_check)
 
                 log.erase(log.begin(), log.begin() + request.count);
                 stream.send(peerid, packet(*m_pimpl->log));
+
+                break;
+            }
+            case StorageAuthorization::rtt:
+            {
+                StorageAuthorization request;
+                std::move(received_packet).get(request);
+
+                request.time_point.tm = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+                SignedStorageAuthorization response;
+                response.token = std::move(request);
+                response.authorization.address = m_pimpl->pv_key.get_public_key().to_string();
+                response.authorization.signature = m_pimpl->pv_key.sign(response.token.to_string()).base58;
+
+                stream.send(peerid, packet(std::move(response)));
 
                 break;
             }
@@ -489,12 +563,12 @@ void admin_server::run(bool& stop_check)
             received_packet.get(request);
 
             AdminModel::IndexListResponse index_list = m_pimpl->library.list_index(request.sha256sum);
-            auto types_definitions_temp = request.types_definitions;
+            auto type_descriptions_temp = request.type_descriptions;
             for (auto const& existing :
-                 index_list.list_index[request.sha256sum].media_definition.types_definitions)
-                types_definitions_temp.erase(existing.type.to_string());
+                 index_list.list_index[request.sha256sum].type_definitions)
+                type_descriptions_temp.erase(existing.type_description.to_string());
 
-            if (types_definitions_temp.empty())
+            if (type_descriptions_temp.empty())
             {
                 m_pimpl->writeln_node(join_path(request.path).first + ": with hash " +
                                       request.sha256sum + " is already indexed");
@@ -503,7 +577,7 @@ void admin_server::run(bool& stop_check)
                 m_pimpl->library.add(std::move(dummy_progress_item),
                                      string(),
                                      request.sha256sum);
-                m_pimpl->library.process_index_done(request.path, request.types_definitions);
+                m_pimpl->library.process_index_done(request.path, request.type_descriptions);
 
                 CheckMediaResult done;
                 done.path = request.path;
@@ -512,20 +586,20 @@ void admin_server::run(bool& stop_check)
             else
             {
                 m_pimpl->library.process_index_update(request.path,
-                                                      request.types_definitions,
-                                                      types_definitions_temp);
-                request.types_definitions = std::move(types_definitions_temp);
-                types_definitions_temp =
+                                                      request.type_descriptions,
+                                                      type_descriptions_temp);
+                request.type_descriptions = std::move(type_descriptions_temp);
+                type_descriptions_temp =
                         m_pimpl->library.process_index_store_hash(request.path,
-                                                                  request.types_definitions,
+                                                                  request.type_descriptions,
                                                                   request.sha256sum);
-                if (types_definitions_temp.empty())
+                if (type_descriptions_temp.empty())
                 {
                     m_pimpl->writeln_node(join_path(request.path).first + ": with hash " +
                                           request.sha256sum +
                                           " is already indexed and scheduled for media check");
 
-                    m_pimpl->library.process_index_done(request.path, request.types_definitions);
+                    m_pimpl->library.process_index_done(request.path, request.type_descriptions);
 
                     CheckMediaError not_accepted;
                     not_accepted.path = request.path;
@@ -539,15 +613,15 @@ void admin_server::run(bool& stop_check)
                                           " scheduling for check");
 
                     m_pimpl->library.process_index_update(request.path,
-                                                          request.types_definitions,
-                                                          types_definitions_temp);
-                    request.types_definitions = std::move(types_definitions_temp);
+                                                          request.type_descriptions,
+                                                          type_descriptions_temp);
+                    request.type_descriptions = std::move(type_descriptions_temp);
 
-                    if (false == m_pimpl->library.check(std::move(request.path), std::move(request.types_definitions)))
+                    if (false == m_pimpl->library.check(std::move(request.path), std::move(request.type_descriptions)))
                     {
                         m_pimpl->writeln_node("\tis already scheduled");
 
-                        m_pimpl->library.process_index_done(request.path, request.types_definitions);
+                        m_pimpl->library.process_index_done(request.path, request.type_descriptions);
 
                         CheckMediaError not_accepted;
                         not_accepted.path = request.path;
@@ -568,7 +642,7 @@ void admin_server::run(bool& stop_check)
             log.path = request.path;
             log.reason = request.reason;
 
-            m_pimpl->library.process_index_done(request.path, request.types_definitions);
+            m_pimpl->library.process_index_done(request.path, request.type_descriptions);
 
             m_pimpl->writeln_node(join_path(request.path).first + ": " + request.reason);
             m_pimpl->log->log.push_back(std::move(received_packet));

@@ -172,29 +172,26 @@ void storage_server::run(bool& stop)
 
                 string file_uri;
 
-                //if (false)
+                if (false)
                 {
                     file_uri = file_info.uri;
                 }
-                /*else
+                else
                 {
                     string channel_address;
-                    string storage_address;
-                    string content_unit_uri;
                     string session_id;
                     uint64_t seconds;
                     system_clock::time_point tp;
 
-                    if (false == verify_storage_order(file_info.storage_order_token,
+                    if (false == verify_storage_order(file_info.authorization,
                                                       channel_address,
                                                       file_uri,
-                                                      content_unit_uri,
                                                       session_id,
                                                       seconds,
                                                       tp) ||
                         m_pimpl->pb_key.to_string() != channel_address)
-                        file_uri.clear();
-                }*/
+                        file_info.uri = std::move(file_uri);
+                }
 
                 StorageFile file;
                 if (false == file_uri.empty() &&
@@ -205,7 +202,7 @@ void storage_server::run(bool& stop)
                 else
                 {
                     UriError error;
-                    error.uri = file_uri;
+                    error.uri = file_info.uri;
                     error.uri_problem_type = UriProblemType::missing;
                     psk->send(peerid, beltpp::packet(std::move(error)));
                 }
@@ -219,29 +216,26 @@ void storage_server::run(bool& stop)
 
                 string file_uri;
 
-                //if (false)
+                if (false)
                 {
                     file_uri = file_info.uri;
                 }
-                /*else
+                else
                 {
                     string channel_address;
-                    string storage_address;
-                    string content_unit_uri;
                     string session_id;
                     uint64_t seconds;
                     system_clock::time_point tp;
 
-                    if (false == verify_storage_order(file_info.storage_order_token,
+                    if (false == verify_storage_order(file_info.authorization,
                                                       channel_address,
                                                       file_uri,
-                                                      content_unit_uri,
                                                       session_id,
                                                       seconds,
                                                       tp) ||
                         m_pimpl->pb_key.to_string() != channel_address)
-                        file_uri.clear();
-                }*/
+                        file_info.uri = std::move(file_uri);
+                }
 
                 StorageFile file;
                 if (false == file_uri.empty() &&
@@ -265,7 +259,7 @@ void storage_server::run(bool& stop)
                 else
                 {
                     UriError error;
-                    error.uri = file_uri;
+                    error.uri = file_info.uri;
                     error.uri_problem_type = UriProblemType::missing;
                     psk->send(peerid, beltpp::packet(std::move(error)));
                 }
