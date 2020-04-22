@@ -57,18 +57,18 @@ module AdminModel
         Array Object log
     }
 
-    class ProcessIndexProblem
-    {
-        Array String path
-        String reason
-    }
-
     class CheckMediaResult
     {
         Array String path
     }
 
-    class CheckMediaProblem
+    class CheckMediaError
+    {
+        Array String path
+        String reason
+    }
+
+    class CheckMediaWarning
     {
         Array String path
         String reason
@@ -85,11 +85,11 @@ module AdminModel
     }
     class MediaDefinition
     {
-        Hash String MediaTypeDefinition types_definitions
+        Array MediaTypeDefinition types_definitions
     }
     class MediaTypeDefinition
     {
-        Object type // MediaTypeDescriptionVideo
+        Object type // MediaTypeDescriptionVideoContainer
         MediaSequence sequence
     }
 

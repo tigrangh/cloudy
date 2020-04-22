@@ -212,6 +212,66 @@ void storage_server::run(bool& stop)
 
                 break;
             }
+            case StorageFileRangeRequest::rtt:
+            {
+                StorageFileRangeRequest file_info;
+                std::move(received_packet).get(file_info);
+
+                string file_uri;
+
+                //if (false)
+                {
+                    file_uri = file_info.uri;
+                }
+                /*else
+                {
+                    string channel_address;
+                    string storage_address;
+                    string content_unit_uri;
+                    string session_id;
+                    uint64_t seconds;
+                    system_clock::time_point tp;
+
+                    if (false == verify_storage_order(file_info.storage_order_token,
+                                                      channel_address,
+                                                      file_uri,
+                                                      content_unit_uri,
+                                                      session_id,
+                                                      seconds,
+                                                      tp) ||
+                        m_pimpl->pb_key.to_string() != channel_address)
+                        file_uri.clear();
+                }*/
+
+                StorageFile file;
+                if (false == file_uri.empty() &&
+                    m_pimpl->m_storage.get(file_uri, file))
+                {
+                    if (file_info.count == 0)
+                        file_info.count = 1024 * 1024;
+
+                    file_info.count = std::min(file_info.count, file.data.length() - file_info.start);
+
+                    StorageFileRange fr;
+                    fr.start = file_info.start;
+                    fr.count = file_info.count;
+                    fr.full_size = file.data.length();
+
+                    fr.data = file.data.substr(fr.start, fr.count);
+                    fr.mime_type = file.mime_type;
+
+                    psk->send(peerid, beltpp::packet(std::move(fr)));
+                }
+                else
+                {
+                    UriError error;
+                    error.uri = file_uri;
+                    error.uri_problem_type = UriProblemType::missing;
+                    psk->send(peerid, beltpp::packet(std::move(error)));
+                }
+
+                break;
+            }
             case StorageFileDetails::rtt:
             {
                 StorageFileDetails details_request;

@@ -6,7 +6,6 @@
 #include <mesh.pp/fileutility.hpp>
 #include <mesh.pp/cryptoutility.hpp>
 
-#include <utility>
 #include <unordered_map>
 #include <algorithm>
 
@@ -27,12 +26,16 @@ class library_internal
 {
 public:
     library_internal(filesystem::path const& path)
-        : library_tree("library_tree", path, 10000, get_internal_putl())
+        : processing_for_check(false)
+        , processing_for_index(0)
+        , library_tree("library_tree", path, 10000, get_internal_putl())
         , library_index("library_index", path, 10000, get_admin_putl())
         , pending_for_index(path / "pending_for_index.json")
         , pending_for_media_check(path / "pending_for_media_check.json")
     {}
 
+    bool processing_for_check;
+    uint64_t processing_for_index;
     meshpp::map_loader<LibraryTree> library_tree;
     meshpp::map_loader<AdminModel::LibraryIndex> library_index;
     meshpp::file_loader<PendingForIndex,
@@ -41,8 +44,6 @@ public:
     meshpp::file_loader<PendingForMediaCheck,
                         &PendingForMediaCheck::from_string,
                         &PendingForMediaCheck::to_string> pending_for_media_check;
-    unordered_set<string> processing_for_index;
-    unordered_set<string> processing_for_check;
 };
 }
 
@@ -52,7 +53,9 @@ library::library(boost::filesystem::path const& path)
     for (auto const& item : m_pimpl->pending_for_index.as_const()->items)
     {
         if (false == item.sha256sum.empty())
-            m_pimpl->processing_for_index.insert(join_path(item.path).first);
+            ++m_pimpl->processing_for_index;
+        else
+            break;
     }
 }
 library::~library()
@@ -127,11 +130,11 @@ AdminModel::LibraryResponse library::list(vector<string> const& path) const
 }
 
 void library::add(ProcessMediaCheckResult&& progress_item,
-                  string const& uri)
+                  string const& uri,
+                  string const& sha256sum)
 {
     string child;
 
-    string sha256sum = process_index_retrieve_hash(progress_item.path);
     if (sha256sum.empty())
         throw std::logic_error("library::add: sha256sum.empty()");
 
@@ -157,13 +160,24 @@ void library::add(ProcessMediaCheckResult&& progress_item,
             {
                 AdminModel::MediaDefinition& media_definition = index_item.media_definition;
 
-                string progress_item_type_definition_key = progress_item.type.to_string();
-                progress_item_type_definition_key = meshpp::to_base64(progress_item_type_definition_key, false);
-                auto& media_type_definition = media_definition.types_definitions[progress_item_type_definition_key];
-                media_type_definition.type = std::move(progress_item.type);
+                AdminModel::MediaTypeDefinition* media_type_definition = nullptr;
+                for (auto& item : media_definition.types_definitions)
+                {
+                    if (item.type.to_string() == progress_item.type.to_string())
+                    {
+                        media_type_definition = &item;
+                        break;
+                    }
+                }
+                if (nullptr == media_type_definition)
+                {
+                    media_definition.types_definitions.push_back(AdminModel::MediaTypeDefinition());
+                    media_type_definition = &media_definition.types_definitions.back();
+                    media_type_definition->type = std::move(progress_item.type);
+                }
 
                 uint64_t accumulated = 0;
-                auto& frames = media_type_definition.sequence.frames;
+                auto& frames = media_type_definition->sequence.frames;
                 if (false == frames.empty())
                     accumulated = frames.back().count;
 
@@ -192,71 +206,12 @@ void library::add(ProcessMediaCheckResult&& progress_item,
     }
 }
 
-void library::index(vector<string>&& path)
+bool library::index(vector<string>&& path)
 {
     string path_string = join_path(path).first;
 
     PendingForIndexItem item;
     item.path = std::move(path);
-
-    m_pimpl->pending_for_index->items.push_back(std::move(item));
-}
-
-vector<vector<string>> library::process_index()
-{
-    vector<vector<string>> result;
-
-    for (auto const& item : m_pimpl->pending_for_index.as_const()->items)
-    {
-        if (m_pimpl->processing_for_index.size() == 3)
-            break;
-        auto insert_res = m_pimpl->processing_for_index.insert(join_path(item.path).first);
-
-        if (insert_res.second)
-            result.push_back(item.path);
-    }
-
-    return result;
-}
-
-void library::process_index_store_hash(std::vector<std::string> const& path, std::string const& sha256sum)
-{
-    auto& items = m_pimpl->pending_for_index->items;
-    for (auto& item : items)
-    {
-        if (item.path == path)
-            item.sha256sum = sha256sum;
-    }
-}
-string library::process_index_retrieve_hash(vector<string> const& path) const
-{
-    auto& items = m_pimpl->pending_for_index->items;
-    for (auto& item : items)
-    {
-        if (item.path == path)
-            return item.sha256sum;
-    }
-    return string();
-}
-void library::process_index_done(vector<string> const& path)
-{
-    m_pimpl->processing_for_index.erase(join_path(path).first);
-
-    auto& items = m_pimpl->pending_for_index->items;
-    auto end_it = std::remove_if(items.begin(), items.end(), [&path](PendingForIndexItem const& item)
-    {
-        return path == item.path;
-    });
-    items.erase(end_it, items.end());
-}
-
-bool library::check(vector<string>&& path)
-{
-    string path_string = join_path(path).first;
-
-    ProcessMediaCheckRequest check;
-    check.path = std::move(path);
-
     if (false)
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
@@ -284,7 +239,7 @@ bool library::check(vector<string>&& path)
         container.audio.set(std::move(audio));
         container.container_extension = "mp4";
 
-        check.types_definitions.insert(container.to_string());
+        item.types_definitions.insert(container.to_string());
     }
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
@@ -312,7 +267,7 @@ bool library::check(vector<string>&& path)
         container.audio.set(std::move(audio));
         container.container_extension = "mp4";
 
-        check.types_definitions.insert(container.to_string());
+        item.types_definitions.insert(container.to_string());
     }
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
@@ -340,7 +295,7 @@ bool library::check(vector<string>&& path)
         container.audio.set(std::move(audio));
         container.container_extension = "mp4";
 
-        check.types_definitions.insert(container.to_string());
+        item.types_definitions.insert(container.to_string());
     }
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
@@ -368,27 +323,149 @@ bool library::check(vector<string>&& path)
         container.audio.set(std::move(audio));
         container.container_extension = "mp4";
 
-        check.types_definitions.insert(container.to_string());
+        item.types_definitions.insert(container.to_string());
     }
 
-    auto& items = m_pimpl->pending_for_media_check->items;
-    bool duplicate = false;
-    for (auto const& item : items)
+    auto& pending_items = m_pimpl->pending_for_index->items;
+    for (auto const& pending_item : pending_items)
     {
-        if (item.path == path)
+        if (pending_item.path == item.path)
         {
-            duplicate = true;
-            break;
+            for (auto const& pending_item_type : pending_item.types_definitions)
+                item.types_definitions.erase(pending_item_type);
         }
     }
 
-    if (false == duplicate)
+    if (item.types_definitions.empty())
+        return false;
+
+    pending_items.push_back(std::move(item));
+
+    return true;
+}
+
+vector<pair<vector<string>, unordered_set<string>>> library::process_index()
+{
+    vector<pair<vector<string>, unordered_set<string>>> result;
+
+    auto const& pending_items = m_pimpl->pending_for_index.as_const()->items;
+    for (size_t index = 0; index != pending_items.size(); ++index)
     {
-        items.push_back(check);
-        return true;
+        if (m_pimpl->processing_for_index == 3)
+            break;
+
+        if (index == m_pimpl->processing_for_index)
+        {
+            ++m_pimpl->processing_for_index;
+
+            result.push_back(std::make_pair(pending_items[index].path,
+                                            pending_items[index].types_definitions));
+        }
     }
 
-    return false;
+    return result;
+}
+
+unordered_set<string> library::process_index_store_hash(vector<string> const& path,
+                                                        unordered_set<string> const& types_definitions,
+                                                        string const& sha256sum)
+{
+    auto types_definitions_temp = types_definitions;
+
+    auto& items = m_pimpl->pending_for_index->items;
+    size_t count = 0;
+    for (auto& item : items)
+    {
+        if (item.path == path &&
+            item.types_definitions == types_definitions &&
+            count < m_pimpl->processing_for_index)
+            item.sha256sum = sha256sum;
+        else if (item.sha256sum == sha256sum)
+        {
+            for (auto const& type : item.types_definitions)
+                types_definitions_temp.erase(type);
+        }
+        ++count;
+    }
+
+    return types_definitions_temp;
+}
+
+string library::process_index_retrieve_hash(vector<string> const& path) const
+{
+    auto& items = m_pimpl->pending_for_index->items;
+    for (auto& item : items)
+    {
+        if (item.path == path)
+            return item.sha256sum;
+    }
+    return string();
+}
+
+void library::process_index_update(vector<string> const& path,
+                                   unordered_set<string> const& types_definitions_find,
+                                   unordered_set<string> const& types_definitions_replace)
+{
+    size_t count = 0;
+    auto& items = m_pimpl->pending_for_index->items;
+    for (auto& item : items)
+    {
+        if (item.path == path &&
+            item.types_definitions == types_definitions_find &&
+            count < m_pimpl->processing_for_index)
+        {
+            item.types_definitions = types_definitions_replace;
+            return;
+        }
+    }
+
+    throw std::logic_error("library::process_index_update");
+}
+
+void library::process_index_done(vector<string> const& path,
+                                 unordered_set<string> const& types_definitions)
+{
+    --m_pimpl->processing_for_index;
+
+    auto& items = m_pimpl->pending_for_index->items;
+    for (size_t index = 0; index != items.size(); ++index)
+    {
+        auto& item = items[index];
+        if (item.path == path &&
+            item.types_definitions == types_definitions)
+        {
+            items.erase(items.begin() + index);
+            return;
+        }
+    }
+
+    throw std::logic_error("library::process_index_done");
+}
+
+bool library::check(vector<string>&& path, unordered_set<string>&& types_definitions)
+{
+    auto types_definitions_temp = types_definitions;
+
+    auto& pending_items = m_pimpl->pending_for_media_check->items;
+    for (auto const& pending_item : pending_items)
+    {
+        if (pending_item.path == path)
+        {
+            for (auto const& pending_item_type : pending_item.types_definitions)
+                types_definitions_temp.erase(pending_item_type);
+        }
+    }
+
+    if (types_definitions_temp.empty())
+        return false;
+
+    ProcessMediaCheckRequest check;
+    check.path = std::move(path);
+    check.types_definitions = std::move(types_definitions_temp);
+    process_index_update(check.path, types_definitions, check.types_definitions);
+    pending_items.push_back(check);
+
+    return true;
 }
 
 vector<ProcessMediaCheckRequest> library::process_check()
@@ -397,28 +474,26 @@ vector<ProcessMediaCheckRequest> library::process_check()
 
     for (InternalModel::ProcessMediaCheckRequest const& item : m_pimpl->pending_for_media_check.as_const()->items)
     {
-        if (m_pimpl->processing_for_check.size() == 1)
+        if (m_pimpl->processing_for_check)
             break;
-        auto insert_res = m_pimpl->processing_for_check.insert(join_path(item.path).first);
+        m_pimpl->processing_for_check = true;
 
-        if (insert_res.second)
-            result.push_back(item);
+        result.push_back(item);
     }
 
     return result;
 }
 
-bool
+unordered_set<string>
 library::process_check_done(ProcessMediaCheckResult&& progress_item,
                             string const& uri)
 {
-    std::unique_ptr<AdminModel::MediaDefinition> result;
     string string_path = join_path(progress_item.path).first;
 
     auto& items = m_pimpl->pending_for_media_check->items;
 
     auto it_item = items.begin();
-    for (; it_item != items.end(); ++it_item)
+    //for (; it_item != items.end(); ++it_item)
     {
         InternalModel::ProcessMediaCheckRequest& item = *it_item;
 
@@ -426,16 +501,19 @@ library::process_check_done(ProcessMediaCheckResult&& progress_item,
         {
             if (0 == progress_item.count)
             {
+                auto result = std::move(item.types_definitions);
                 items.erase(it_item);
-                m_pimpl->processing_for_check.erase(string_path);
+                m_pimpl->processing_for_check = false;
 
-                return true;
+                return result;
             }
             else
             {
-                add(std::move(progress_item), uri);
+                string sha256sum = process_index_retrieve_hash(progress_item.path);
 
-                return false;
+                add(std::move(progress_item), uri, sha256sum);
+
+                return unordered_set<string>();
             }
         }
     }
@@ -443,10 +521,6 @@ library::process_check_done(ProcessMediaCheckResult&& progress_item,
     throw std::logic_error("library::process_check_done: pending item not found");
 }
 
-bool library::indexed(string const& checksum) const
-{
-    return m_pimpl->library_index.contains(checksum);
-}
 AdminModel::IndexListResponse library::list_index(std::string const& sha256sum) const
 {
     AdminModel::IndexListResponse result;

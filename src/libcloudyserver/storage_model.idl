@@ -28,6 +28,23 @@ module StorageModel
         String storage_order_token
     }
 
+    class StorageFileRangeRequest
+    {
+        String uri
+        String storage_order_token
+        UInt64 start
+        UInt64 count
+    }
+
+    class StorageFileRange
+    {
+        String mime_type
+        String data
+        UInt64 full_size
+        UInt64 start
+        UInt64 count
+    }
+
     class StorageFileDetails
     {
         String uri

@@ -206,9 +206,10 @@ public:
     {
         auto path = progress_info.path;
 
-        bool final_progress_for_path =
+        auto types_definitions =
                 library.process_check_done(std::move(progress_info),
                                            uri);
+        bool final_progress_for_path = (false == types_definitions.empty());
 
         if (final_progress_for_path)
         {
@@ -216,9 +217,17 @@ public:
             if (sha256sum.empty())
                 throw std::logic_error("process_check_done_wrapper: sha256sum.empty()");
 
-            if (false == library.indexed(sha256sum))
+            bool detected = false;
+            AdminModel::IndexListResponse index_list = library.list_index(sha256sum);
+            for (auto const& existing : index_list.list_index[sha256sum].media_definition.types_definitions)
             {
-                AdminModel::CheckMediaProblem problem;
+                if (types_definitions.count(existing.type.to_string()))
+                    detected = true;
+            }
+
+            if (false == detected)
+            {
+                AdminModel::CheckMediaError problem;
                 problem.path = path;
                 problem.reason = "was not able to detect any media type";
                 if (false == error_override.empty())
@@ -226,17 +235,19 @@ public:
                 writeln_node(join_path(path).first + ": " + problem.reason);
                 log->log.push_back(packet(std::move(problem)));
             }
+            else
             {
                 AdminModel::CheckMediaResult done;
                 done.path = path;
                 writeln_node(join_path(path).first + ": done");
                 log->log.push_back(packet(std::move(done)));
-                library.process_index_done(path);
             }
+
+            library.process_index_done(path, types_definitions);
         }
         else if (uri.empty())
         {
-            AdminModel::CheckMediaProblem problem;
+            AdminModel::CheckMediaWarning problem;
             problem.path = path;
             problem.reason = "problem with storage";
             if (false == error_override.empty())
@@ -291,12 +302,13 @@ void admin_server::run(bool& stop_check)
         }
     }
     {
-        auto paths = m_pimpl->library.process_index();
-        for (auto&& path : paths)
+        auto paths_and_descs = m_pimpl->library.process_index();
+        for (auto&& path : paths_and_descs)
         {
-            m_pimpl->writeln_node(join_path(path).first + " processing for index");
+            m_pimpl->writeln_node(join_path(path.first).first + " processing for index");
             InternalModel::ProcessIndexRequest request;
-            request.path = std::move(path);
+            request.path = std::move(path.first);
+            request.types_definitions = path.second;
             m_pimpl->ptr_direct_stream->send(worker_peerid, packet(request));
         }
     }
@@ -390,10 +402,18 @@ void admin_server::run(bool& stop_check)
                 if (false == request.path.empty())
                 {
                     auto path_copy = request.path;
+                    auto str_path = join_path(request.path).first;
 
-                    m_pimpl->writeln_node(join_path(path_copy).first + " scheduling for index");
-
-                    m_pimpl->library.index(std::move(path_copy));
+                    if (m_pimpl->library.index(std::move(path_copy)))
+                        m_pimpl->writeln_node(str_path + " scheduling for index");
+                    else
+                    {
+                        m_pimpl->writeln_node(join_path(path_copy).first + " already scheduled for index");
+                        CheckMediaError not_accepted;
+                        not_accepted.path = request.path;
+                        not_accepted.reason = "already scheduled for index";
+                        m_pimpl->log->log.push_back(packet(std::move(not_accepted)));
+                    }
 
                     request.path.pop_back();
                 }
@@ -468,25 +488,90 @@ void admin_server::run(bool& stop_check)
             InternalModel::ProcessIndexResult request;
             received_packet.get(request);
 
-            m_pimpl->library.process_index_store_hash(request.path, request.sha256sum);
+            AdminModel::IndexListResponse index_list = m_pimpl->library.list_index(request.sha256sum);
+            auto types_definitions_temp = request.types_definitions;
+            for (auto const& existing :
+                 index_list.list_index[request.sha256sum].media_definition.types_definitions)
+                types_definitions_temp.erase(existing.type.to_string());
 
-            if (m_pimpl->library.indexed(request.sha256sum))
+            if (types_definitions_temp.empty())
             {
-                m_pimpl->writeln_node(join_path(request.path).first + ": with hash "  + request.sha256sum + " is already indexed");
+                m_pimpl->writeln_node(join_path(request.path).first + ": with hash " +
+                                      request.sha256sum + " is already indexed");
                 InternalModel::ProcessMediaCheckResult dummy_progress_item;
                 dummy_progress_item.path = request.path;
                 m_pimpl->library.add(std::move(dummy_progress_item),
-                                     string());
-                m_pimpl->library.process_index_done(request.path);
+                                     string(),
+                                     request.sha256sum);
+                m_pimpl->library.process_index_done(request.path, request.types_definitions);
+
+                CheckMediaResult done;
+                done.path = request.path;
+                m_pimpl->log->log.push_back(packet(std::move(done)));
             }
             else
             {
-                m_pimpl->writeln_node(join_path(request.path).first + ": with hash "  + request.sha256sum + " scheduling for check");
-                m_pimpl->library.process_index_store_hash(request.path, request.sha256sum);
-                if (false == m_pimpl->library.check(std::move(request.path)))
-                    m_pimpl->writeln_node("\tis already scheduled");
+                m_pimpl->library.process_index_update(request.path,
+                                                      request.types_definitions,
+                                                      types_definitions_temp);
+                request.types_definitions = std::move(types_definitions_temp);
+                types_definitions_temp =
+                        m_pimpl->library.process_index_store_hash(request.path,
+                                                                  request.types_definitions,
+                                                                  request.sha256sum);
+                if (types_definitions_temp.empty())
+                {
+                    m_pimpl->writeln_node(join_path(request.path).first + ": with hash " +
+                                          request.sha256sum +
+                                          " is already indexed and scheduled for media check");
+
+                    m_pimpl->library.process_index_done(request.path, request.types_definitions);
+
+                    CheckMediaError not_accepted;
+                    not_accepted.path = request.path;
+                    not_accepted.reason = "is already indexed and scheduled for media check";
+                    m_pimpl->log->log.push_back(packet(std::move(not_accepted)));
+                }
+                else
+                {
+                    m_pimpl->writeln_node(join_path(request.path).first +
+                                          ": with hash "  + request.sha256sum +
+                                          " scheduling for check");
+
+                    m_pimpl->library.process_index_update(request.path,
+                                                          request.types_definitions,
+                                                          types_definitions_temp);
+                    request.types_definitions = std::move(types_definitions_temp);
+
+                    if (false == m_pimpl->library.check(std::move(request.path), std::move(request.types_definitions)))
+                    {
+                        m_pimpl->writeln_node("\tis already scheduled");
+
+                        m_pimpl->library.process_index_done(request.path, request.types_definitions);
+
+                        CheckMediaError not_accepted;
+                        not_accepted.path = request.path;
+                        not_accepted.reason = "already scheduled for media check";
+                        m_pimpl->log->log.push_back(packet(std::move(not_accepted)));
+                    }
+                }
             }
 
+            break;
+        }
+        case InternalModel::ProcessIndexError::rtt:
+        {
+            InternalModel::ProcessIndexError request;
+            std::move(received_packet).get(request);
+
+            CheckMediaError log;
+            log.path = request.path;
+            log.reason = request.reason;
+
+            m_pimpl->library.process_index_done(request.path, request.types_definitions);
+
+            m_pimpl->writeln_node(join_path(request.path).first + ": " + request.reason);
+            m_pimpl->log->log.push_back(std::move(received_packet));
             break;
         }
         case InternalModel::ProcessMediaCheckResult::rtt:
@@ -500,23 +585,6 @@ void admin_server::run(bool& stop_check)
             m_pimpl->writeln_node(join_path(request.path).first + " got some checked data");
             m_pimpl->process_storage(std::move(request));
 
-            break;
-        }
-        case InternalModel::AdminModelWrapper::rtt:
-        {
-            InternalModel::AdminModelWrapper request_wrapper;
-            std::move(received_packet).get(request_wrapper);
-
-            if (request_wrapper.package.type() == ProcessIndexProblem::rtt)
-            {
-                ProcessIndexProblem request;
-                request_wrapper.package.get(request);
-
-                m_pimpl->library.process_index_done(request.path);
-
-                m_pimpl->writeln_node(join_path(request.path).first + ": " + request.reason);
-                m_pimpl->log->log.push_back(std::move(received_packet));
-            }
             break;
         }
         }

@@ -68,19 +68,18 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
             InternalModel::ProcessIndexResult response;
             response.path = request.path;
             response.sha256sum = meshpp::hash(begin, end);
+            response.types_definitions = request.types_definitions;
 
             result.set(std::move(response));
         }
         catch (std::exception const& ex)
         {
-            InternalModel::AdminModelWrapper response_wrapper;
-            AdminModel::ProcessIndexProblem response;
+            InternalModel::ProcessIndexError response;
             response.path = request.path;
+            response.types_definitions = request.types_definitions;
             response.reason = ex.what();
 
-            response_wrapper.package.set(std::move(response));
-
-            result.set(std::move(response_wrapper));
+            result.set(std::move(response));
         }
 
         stream.send(std::move(result));
@@ -130,7 +129,6 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
 
                         response.result_type = InternalModel::ResultType::file;
                         response.data_or_file = ftod.first;
-
 
                         stream.send(packet(std::move(response)));
                     }

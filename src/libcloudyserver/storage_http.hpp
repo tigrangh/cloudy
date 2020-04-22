@@ -76,6 +76,34 @@ string file_response(beltpp::detail::session_special_data& ssd,
         return str_result;
     }
 }
+inline
+string file_range_response(beltpp::detail::session_special_data& ssd,
+                           beltpp::packet const& pc)
+{
+    ssd.session_specal_handler = nullptr;
+
+    if (pc.type() == StorageModel::StorageFileRange::rtt)
+    {
+        string str_result;
+        StorageModel::StorageFileRange const* pFile = nullptr;
+        pc.get(pFile);
+
+        str_result += "HTTP/1.1 206 OK\r\n";
+        if (false == pFile->mime_type.empty())
+            str_result += "Content-Type: " + pFile->mime_type + "\r\n";
+        str_result += "Access-Control-Allow-Origin: *\r\n";
+        str_result += "Content-Range: bytes " + std::to_string(pFile->start) + "-" +
+                      std::to_string(pFile->start + pFile->count - 1) + "/" + std::to_string(pFile->full_size) + "\r\n";
+        str_result += "Content-Length: ";
+        str_result += std::to_string(pFile->data.length());
+        str_result += "\r\n\r\n";
+        str_result += pFile->data;
+
+        return str_result;
+    }
+    else
+        return file_response(ssd, pc);
+}
 
 template <beltpp::detail::pmsg_all (*fallback_message_list_load)(
         std::string::const_iterator&,
@@ -138,28 +166,79 @@ beltpp::detail::pmsg_all message_list_load(
             ss.resource.path.size() == 1 &&
             ss.resource.path.front() == "storage")
         {
-            ssd.session_specal_handler = &file_response;
+            bool range_request = false;
+            uint64_t range_start, range_count;
 
-            auto p = ::beltpp::new_void_unique_ptr<StorageModel::StorageFileRequest>();
-            StorageModel::StorageFileRequest& ref = *reinterpret_cast<StorageModel::StorageFileRequest*>(p.get());
-            ref.uri = ss.resource.arguments["file"];
-            ref.storage_order_token = ss.resource.arguments["storage_order_token"];
-            return ::beltpp::detail::pmsg_all(StorageModel::StorageFileRequest::rtt,
-                                              std::move(p),
-                                              &StorageModel::StorageFileRequest::pvoid_saver);
-        }
-        else if (ss.type == beltpp::http::detail::scan_status::post &&
-                 ss.resource.path.size() == 1 &&
-                 ss.resource.path.front() == "storage")
-        {
-            auto p = ::beltpp::new_void_unique_ptr<StorageModel::StorageFile>();
-            StorageModel::StorageFile& ref = *reinterpret_cast<StorageModel::StorageFile*>(p.get());
-            ref.mime_type = ss.resource.properties["Content-Type"];
-            ref.data = std::move(posted);
+            auto it_range = ss.resource.properties.find("Range");
+            if (it_range != ss.resource.properties.end())
+            {
+                string property = it_range->second;
 
-            return ::beltpp::detail::pmsg_all(StorageModel::StorageFile::rtt,
-                                              std::move(p),
-                                              &StorageModel::StorageFile::pvoid_saver);
+                vector<string> parts = beltpp::http::request::split(property, "=", false, 2, true);
+                if (parts.size() == 2 &&
+                    parts.front() == "bytes")
+                {
+                    parts = beltpp::http::request::split(parts.back(), "-", false, 2, true);
+                    string str_start, str_end;
+                    if (parts.size() == 2)
+                    {
+                        str_start = parts.front();
+                        str_end = parts.back();
+                    }
+                    else if (parts.size() == 1)
+                        str_start = parts.front();
+
+                    if (parts.size() == 1 || parts.size() == 2)
+                    {
+                        size_t pos;
+                        uint64_t start = beltpp::stoui64(str_start, pos);
+                        if (pos == str_start.size())
+                        {
+                            auto temp_end = beltpp::stoui64(str_end, pos);
+                            if (str_end.empty())
+                            {
+                                range_start = start;
+                                range_count = 0;
+                                range_request = true;
+                            }
+                            else if (pos == str_end.size() &&
+                                     temp_end >= start)
+                            {
+                                range_start = start;
+                                range_count = temp_end - start + 1;
+                                range_request = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (range_request)
+            {
+                ssd.session_specal_handler = &file_range_response;
+
+                auto p = ::beltpp::new_void_unique_ptr<StorageModel::StorageFileRangeRequest>();
+                StorageModel::StorageFileRangeRequest& ref = *reinterpret_cast<StorageModel::StorageFileRangeRequest*>(p.get());
+                ref.uri = ss.resource.arguments["file"];
+                ref.storage_order_token = ss.resource.arguments["storage_order_token"];
+                ref.start = range_start;
+                ref.count = range_count;
+                return ::beltpp::detail::pmsg_all(StorageModel::StorageFileRangeRequest::rtt,
+                                                  std::move(p),
+                                                  &StorageModel::StorageFileRangeRequest::pvoid_saver);
+            }
+            else
+            {
+                ssd.session_specal_handler = &file_response;
+
+                auto p = ::beltpp::new_void_unique_ptr<StorageModel::StorageFileRequest>();
+                StorageModel::StorageFileRequest& ref = *reinterpret_cast<StorageModel::StorageFileRequest*>(p.get());
+                ref.uri = ss.resource.arguments["file"];
+                ref.storage_order_token = ss.resource.arguments["storage_order_token"];
+                return ::beltpp::detail::pmsg_all(StorageModel::StorageFileRequest::rtt,
+                                                  std::move(p),
+                                                  &StorageModel::StorageFileRequest::pvoid_saver);
+            }
         }
         else if (ss.type == beltpp::http::detail::scan_status::post &&
                  ss.resource.path.size() == 1 &&

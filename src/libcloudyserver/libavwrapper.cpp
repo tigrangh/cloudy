@@ -1047,11 +1047,14 @@ bool EncoderContext::load(packet&& options,
 {
     if (options.type() != AdminModel::MediaTypeDescriptionVideoContainer::rtt)
         return true;
+
+    type_definition_str = options.to_string();
+
     AdminModel::MediaTypeDescriptionVideoContainer container_options;
     std::move(options).get(container_options);
 
     filepath = (output_dir / (std::to_string(file_index) + "." + container_options.container_extension)).string();
-    type_definition_str = options.to_string();
+
     avformat_context = format_context_alloc_output(filepath);
     if (nullptr == avformat_context)
     {

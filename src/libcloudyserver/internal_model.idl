@@ -13,6 +13,7 @@ module InternalModel
     {
         String sha256sum
         Array String path
+        Set String types_definitions
     }
     class PendingForIndex
     {
@@ -29,7 +30,7 @@ module InternalModel
         Array String path
         String output_dir
 
-        // value can be MediaTypeDescriptionVideo serialized
+        // value can be MediaTypeDescriptionVideoContainer serialized
         Set String types_definitions
     }
 
@@ -39,12 +40,21 @@ module InternalModel
     class ProcessIndexRequest
     {
         Array String path
+        Set String types_definitions
     }
 
     class ProcessIndexResult
     {
         Array String path
         String sha256sum
+        Set String types_definitions
+    }
+
+    class ProcessIndexError
+    {
+        Array String path
+        Set String types_definitions
+        String reason
     }
 
     class ProcessMediaCheckResult
@@ -52,16 +62,11 @@ module InternalModel
         UInt64 accumulated
         UInt64 count
         Array String path
-        Extension type // MediaTypeDescriptionVideo
+        Extension type // MediaTypeDescriptionVideoContainer
         String data_or_file
         ResultType result_type
     }
     enum ResultType {data file}
-
-    class AdminModelWrapper
-    {
-        Extension package
-    }
 
     ///
     // these interface with storage api
