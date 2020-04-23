@@ -24,6 +24,8 @@ For now, the only type of supported media is video.
 [boost](https://www.boost.org "boost"), [crypto++](https://www.cryptopp.com/ "crypto++") and [ffmpeg](https://ffmpeg.org/ "ffmpeg") are external dependencies.  
 [mesh.pp](https://github.com/publiqnet/mesh.pp "mesh.pp"), [belt.pp](https://github.com/publiqnet/belt.pp "belt.pp") and [a simple cmake utility](https://github.com/publiqnet/cmake_utility "the simple title for the simple cmake utility") are git submodules.
 
+In my development environment I have `ffmpeg version 4.2.1 Copyright (c) 2000-2019 the FFmpeg developers`, I hope this will compile in your environment too.
+
 ## How to build cloudy?
 ```console
 user@pc:~$ mkdir projects
