@@ -83,7 +83,7 @@ But just the uri is made to be not enough to get the file, we need to ask the ad
 
 ### Get the authorization
 ```console
-user@pc:~$ curl "127.0.0.1:4444/authorization/C56jZnpinpaeS5KDGxtuBRRy3YxcbXx46eFpkgBC1XW4"
+user@pc:~$ curl "127.0.0.1:4444/authorization?file=C56jZnpinpaeS5KDGxtuBRRy3YxcbXx46eFpkgBC1XW4&seconds=3600"
 eyJydHQiOjE3LCJ0b2tlbiI6eyJydHQiOjE2LCJmaWxlX3VyaSI6IkM1NmpabnBpbnBhZVM1S0RHeHR1QlJSeTNZeGNiWHg0NmVGcGtnQkMxWFc0Iiwic2Vzc2lvbl9pZCI6IiIsInNlY29uZHMiOjM2MDAsInRpbWVfcG9pbnQiOiIyMDIwLTA0LTIzIDA5OjAwOjAwIn0sImF1dGhvcml6YXRpb24iOnsicnR0IjoxOCwiYWRkcmVzcyI6IkNsb3VkeS01d21EYlJxVEt3c1ZZSEVjb0Y2blhmSzZGVFZoU2FUZEs1VVMxOURXMmpROW1hNmtOZiIsInNpZ25hdHVyZSI6IjM4MXlYWW5uOUxIYVBwZWVNRmRVczNuU2dSVnFUTVo0bzZUOVpXd2hZWXJzb01TZXBuenJnRHE1Sld2elJCWkxTVnhQVE0xeGhQeVlFbXZveDNxSnllQ3ZVdzdFdW0zaSJ9fQ==
 ```
 This long string is a base64 encoded json structure that includes cryptographic signature and link validity information. We'll use it to get the actual transcoded video file from storage api. Be sure to url encode it properly
