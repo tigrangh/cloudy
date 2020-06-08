@@ -354,7 +354,7 @@ public:
             avcodec_context->bit_rate       = OUTPUT_BIT_RATE;
             avcodec_context->time_base      = (AVRational){1, sample_rate};
 
-            avcodec_context->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
+            avcodec_context->strict_std_compliance = FF_COMPLIANCE_NORMAL;
 
             avstream->time_base = avcodec_context->time_base;
         }
