@@ -54,7 +54,7 @@ Use also -k option to define a cryptographic private key. just run once without 
 ### Add a file to media library
 Consider `/path/to/media/file.mp4` to be a local video file
 ```console
-user@pc:~$ curl -X PUT --data '[{"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":"", "filter":{}}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":"", "filter":{}}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":720, "width":1280, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":"", "filter":{}}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":360, "width":640, "fps":29}}}}]' "127.0.0.1:4444/library/path/to/media/file.mp4"
+user@pc:~$ curl -X PUT --data '[{"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":720, "width":1280, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":360, "width":640, "fps":29}}}}]' "127.0.0.1:4444/library/path/to/media/file.mp4"
 {"rtt":5,"files":[],"directories":[]}
 ```
 The response shows already existing files and folders in the library (in the current directory), in this case nothing yet.
@@ -76,7 +76,7 @@ With this we get the checksum of the file - sha256 hash
 And then
 ```console
 user@pc:~$ curl "127.0.0.1:4444/index/GvN8WbnpBtXe6GzJPbQtmanD6gxg7Bt8XHibwU7x546m"
-{"rtt":22,"paths":[["path","to","media","file.mp4"]],"type_definitions":[{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":"","filter":{}}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"x264-params","codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1","filter":{"rtt":27,"height":360,"width":640,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54,"uri":"ASCvRY6YCMsLAD2iPyMHPnnb9Lqjg1Zhq15o8JnxYSfM"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":"","filter":{}}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"x264-params","codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1","filter":{"rtt":27,"height":1080,"width":1920,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54,"uri":"2abSXktkdeFWBTpJGFXvxT6x5nuPn1MAX9xKD2GPQqv9"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":"","filter":{}}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"x264-params","codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1","filter":{"rtt":27,"height":720,"width":1280,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54,"uri":"C56jZnpinpaeS5KDGxtuBRRy3YxcbXx46eFpkgBC1XW4"}]}}]}
+{"rtt":22,"paths":[["path","to","media","file.mp4"]],"type_definitions":[{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"x264-params","codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1","filter":{"rtt":27,"height":360,"width":640,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54,"uri":"ASCvRY6YCMsLAD2iPyMHPnnb9Lqjg1Zhq15o8JnxYSfM"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"x264-params","codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1","filter":{"rtt":27,"height":1080,"width":1920,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54,"uri":"2abSXktkdeFWBTpJGFXvxT6x5nuPn1MAX9xKD2GPQqv9"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"x264-params","codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1","filter":{"rtt":27,"height":720,"width":1280,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54,"uri":"C56jZnpinpaeS5KDGxtuBRRy3YxcbXx46eFpkgBC1XW4"}]}}]}
 ```
 This shows that there are three transcoded versions of the original video file, details about the transcoding options and the "uri" of each transcoded file, which can be used to request the file from storage server. By the way, "count" shows the duration of the video.
 But just the uri is made to be not enough to get the file, we need to ask the admin interface to sign it, and get an authorization.
@@ -135,7 +135,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 1,
         "properties": {
-            "list_index": { "type": "Hash"},
+            "list_index": { "type": "Hash String LibraryIndex"},
         }
     },
 
@@ -189,7 +189,6 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         }
     },
 
-
     "LibraryItemFile": {
         "type": "object",
         "rtt": 8,
@@ -198,6 +197,8 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
             "checksums": { "type": "Array String"},
         }
     },
+
+
 
     "LibraryItemDirectory": {
         "type": "object",
@@ -276,7 +277,6 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         }
     },
 
-
     "Authority": {
         "type": "object",
         "rtt": 18,
@@ -285,6 +285,8 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
             "signature": { "type": "String"},
         }
     },
+
+
 
     "MediaSequence": {
         "type": "object",
@@ -333,8 +335,8 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 24,
         "properties": {
-            "audio": { "type": "Object"},
-            "video": { "type": "Object"},
+            "audio": { "type": "Optional MediaTypeDescriptionAVStream"},
+            "video": { "type": "Optional MediaTypeDescriptionAVStream"},
             "muxer_opt_key": { "type": "String"},
             "muxer_opt_value": { "type": "String"},
             "container_extension": { "type": "String"},
@@ -345,7 +347,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 25,
         "properties": {
-            "transcode": { "type": "Object"},
+            "transcode": { "type": "Optional MediaTypeDescriptionAVStreamTranscode"},
         }
     },
 
@@ -356,7 +358,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
             "codec": { "type": "String"},
             "codec_priv_key": { "type": "String"},
             "codec_priv_value": { "type": "String"},
-            "filter": { "type": "Object"},
+            "filter": { "type": "Optional MediaTypeDescriptionVideoFilter"},
         }
     },
 
@@ -369,7 +371,6 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
             "fps": { "type": "UInt64"},
         }
     },
-
 
     "MediaTypeDescriptionRaw": {
         "type": "object",

@@ -301,10 +301,6 @@ public:
     {
         skip = false;
 
-        AdminModel::MediaTypeDescriptionVideoFilter const* options_filter = nullptr;
-        if (options.filter.type() == AdminModel::MediaTypeDescriptionVideoFilter::rtt)
-            options.filter.get(options_filter);
-
         if (decoder.avmedia_type == AVMEDIA_TYPE_AUDIO)
         {
             int sample_rate = decoder.avcodec_context->sample_rate;
@@ -404,7 +400,7 @@ public:
             }
             */
 
-            if (nullptr == options_filter)
+            if (!options.filter)
             {
                 avcodec_context->height = decoder.avcodec_context->height;
                 avcodec_context->width = decoder.avcodec_context->width;
@@ -412,19 +408,19 @@ public:
             }
             else
             {
-                double height_ratio = double(options_filter->height) / decoder.avcodec_context->height;
-                double width_ratio = double(options_filter->width) / decoder.avcodec_context->width;
+                double height_ratio = double(options.filter->height) / decoder.avcodec_context->height;
+                double width_ratio = double(options.filter->width) / decoder.avcodec_context->width;
 
                 if (height_ratio >= width_ratio &&
                     width_ratio <= 1)
                 {
                     avcodec_context->height = decoder.avcodec_context->height * width_ratio;
-                    avcodec_context->width = options_filter->width;
+                    avcodec_context->width = options.filter->width;
                 }
                 else if (height_ratio <= width_ratio &&
                          height_ratio <= 1)
                 {
-                    avcodec_context->height = options_filter->height;
+                    avcodec_context->height = options.filter->height;
                     avcodec_context->width = decoder.avcodec_context->width * height_ratio;
                 }
                 else
@@ -432,7 +428,7 @@ public:
                     skip = true;
                     return;
                 }
-                avcodec_context->framerate = {int(options_filter->fps), 1};
+                avcodec_context->framerate = {int(options.filter->fps), 1};
             }
 
             avcodec_context->time_base = av_inv_q(avcodec_context->framerate);
@@ -454,14 +450,11 @@ public:
                                DecoderCodecContextDefinition const& decoder,
                                AVRational input_framerate)
     {
-        AdminModel::MediaTypeDescriptionVideoFilter const* options_filter = nullptr;
-        if (options.filter.type() == AdminModel::MediaTypeDescriptionVideoFilter::rtt)
-            options.filter.get(options_filter);
 
         {
             filter_graph = filter_graph_alloc();
 
-            if (options_filter &&
+            if (options.filter &&
                 avmedia_type == AVMEDIA_TYPE_VIDEO)
             {
                 AVFilterContext* buffer_context = nullptr;
@@ -497,7 +490,7 @@ public:
                         return false;
                 }
 
-                if (options_filter)
+                if (options.filter)
                 {
                     string framerate_arguments = "fps=" + std::to_string(avcodec_context->framerate.num) +
                                                  "/" + std::to_string(avcodec_context->framerate.den);
@@ -512,7 +505,7 @@ public:
                         return false;
                 }
 
-                if (options_filter)
+                if (options.filter)
                 {
                     string scale_name = "scale_" + std::to_string(index);
                     string scale_arguments = std::to_string(avcodec_context->width) + ":" +
@@ -589,6 +582,7 @@ public:
             {
                 AVFilterContext* buffer_context = nullptr;
                 AVFilterContext* format_context = nullptr;
+
                 {
                     string buffer_name = "in_" + std::to_string(index);
                     string buffer_argument;
@@ -737,17 +731,13 @@ public:
         index = decoder.index;
         avmedia_type = decoder.avmedia_type;
 
-        if (options.transcode.empty())
+        if (!options.transcode)
         {
             avcodec_parameters_copy(avstream->codecpar, decoder.avstream->codecpar);
             return true;
         }
 
-        assert(options.transcode.type() == AdminModel::MediaTypeDescriptionAVStreamTranscode::rtt);
-        AdminModel::MediaTypeDescriptionAVStreamTranscode const* transcode_options;
-        options.transcode.get(transcode_options);
-
-        if (false == create_avcodec(transcode_options->codec))
+        if (false == create_avcodec(options.transcode->codec))
             return false;
 
         avcodec_context = codec_context_alloc(avcodec);
@@ -757,7 +747,7 @@ public:
             return false;
         }
 
-        avcodec_context_init(*transcode_options, decoder, input_framerate, skip);
+        avcodec_context_init(*options.transcode, decoder, input_framerate, skip);
 
         if (skip)
             return true;
@@ -769,7 +759,7 @@ public:
         }
         avcodec_parameters_from_context(avstream->codecpar, avcodec_context.get());
 
-        if (false == avfilter_context_init(*transcode_options, decoder, input_framerate))
+        if (false == avfilter_context_init(*options.transcode, decoder, input_framerate))
             return false;
 
         return true;
@@ -778,13 +768,6 @@ public:
     bool process_encode_frame(format_context_ptr& avformat_context,
                               DecoderCodecContextDefinition const& decoder)
     {
-        AdminModel::MediaTypeDescriptionAVStreamTranscode const* options_transcode = nullptr;
-        if (options.transcode.type() == AdminModel::MediaTypeDescriptionAVStreamTranscode::rtt)
-            options.transcode.get(options_transcode);
-        AdminModel::MediaTypeDescriptionVideoFilter const* options_filter = nullptr;
-        if (options_transcode && options_transcode->filter.type() == AdminModel::MediaTypeDescriptionVideoFilter::rtt)
-            options_transcode->filter.get(options_filter);
-
         packet_unref(packet);
 
         //  encode the frame
@@ -808,7 +791,8 @@ public:
 
             packet->stream_index = decoder.index;
 
-            if (options_filter &&
+            if (options.transcode &&
+                options.transcode->filter &&
                 avmedia_type == AVMEDIA_TYPE_VIDEO)
                 av_packet_rescale_ts(packet.get(),
                                      av_inv_q(avcodec_context->framerate),
@@ -971,12 +955,12 @@ bool DecoderContext::next(vector<EncoderContext>& encoder_contexts,
                     EncoderCodecContextDefinition& encoder = *pencoder;
                     DecoderCodecContextDefinition& decoder = *pdecoder;
 
-                    if (encoder.options.transcode.empty() &&
+                    if (!encoder.options.transcode &&
                         false == input_packet_done)
                     {
                         input_packet_done = true;
                     }
-                    else if (false == encoder.options.transcode.empty() &&
+                    else if (encoder.options.transcode &&
                              false == input_frames_done)
                     {
                         input_frames_done = true;
@@ -1014,7 +998,7 @@ bool DecoderContext::next(vector<EncoderContext>& encoder_contexts,
                 EncoderCodecContextDefinition& encoder = *pencoder;
                 DecoderCodecContextDefinition& decoder = *pdecoder;
 
-                if (false == encoder.options.transcode.empty())
+                if (encoder.options.transcode)
                 {
                     int response;
 
@@ -1075,15 +1059,22 @@ bool EncoderContext::load(size_t option_index_,
                                                          decoder.avstream.get(),
                                                          nullptr);
 
-        packet* option = nullptr;
-        if (decoder.avmedia_type == AVMEDIA_TYPE_VIDEO)
-            option = &container_options.video;
-        else if (decoder.avmedia_type == AVMEDIA_TYPE_AUDIO)
-            option = &container_options.audio;
-
-        if (option && option->type() == AdminModel::MediaTypeDescriptionAVStream::rtt)
+        bool is_set = false;
+        if (decoder.avmedia_type == AVMEDIA_TYPE_VIDEO &&
+            container_options.video)
         {
-            option->get(encoder.options);
+            encoder.options = std::move(*container_options.video);
+            is_set = true;
+        }
+        else if (decoder.avmedia_type == AVMEDIA_TYPE_AUDIO &&
+                 container_options.audio)
+        {
+            encoder.options = std::move(*container_options.audio);
+            is_set = true;
+        }
+
+        if (is_set)
+        {
             bool skip = false;
             if (false == encoder.prepare(avformat_context,
                                          input_framerate,
@@ -1147,7 +1138,7 @@ bool EncoderContext::process(DecoderContext& decoder_context,
 
             DecoderCodecContextDefinition& decoder = *pdecoder;
 
-            if (encoder.options.transcode.empty())
+            if (!encoder.options.transcode)
             {
                 packet_ptr& output_packet = encoder.packet;
                 packet_unref(output_packet);
@@ -1183,7 +1174,7 @@ bool EncoderContext::process(DecoderContext& decoder_context,
 
             DecoderCodecContextDefinition& decoder = *pdecoder;
 
-            if (false == encoder.options.transcode.empty())
+            if (encoder.options.transcode)
             {
                 if (encoder.avmedia_type == AVMEDIA_TYPE_VIDEO)
                     data_unit.frame->pict_type = AV_PICTURE_TYPE_NONE;

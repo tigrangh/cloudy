@@ -134,8 +134,8 @@ module AdminModel
 
     class MediaTypeDescriptionVideoContainer
     {
-        Object audio// MediaTypeDescriptionAVStream
-        Object video// MediaTypeDescriptionAVStream
+        Optional MediaTypeDescriptionAVStream audio
+        Optional MediaTypeDescriptionAVStream video
 
         String muxer_opt_key
         String muxer_opt_value
@@ -144,7 +144,7 @@ module AdminModel
 
     class MediaTypeDescriptionAVStream
     {
-        Object transcode// MediaTypeDescriptionAVStreamTranscode
+        Optional MediaTypeDescriptionAVStreamTranscode transcode
     }
 
     class MediaTypeDescriptionAVStreamTranscode
@@ -152,7 +152,7 @@ module AdminModel
         String codec
         String codec_priv_key
         String codec_priv_value
-        Object filter// MediaTypeDescriptionVideoFilter
+        Optional MediaTypeDescriptionVideoFilter filter
     }
 
     class MediaTypeDescriptionVideoFilter
