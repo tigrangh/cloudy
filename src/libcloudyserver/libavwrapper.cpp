@@ -212,14 +212,14 @@ public:
     bool more_write_packet = false;
     bool more_write_frame = false;
 
-    packet_ptr packe = packet_alloc();
+    packet_ptr packet = packet_alloc();
     frame_ptr frame = frame_alloc();
     int stream_index;
 
     ~DataUnit()
     {
         frame_unref(frame);
-        packet_unref(packe);
+        packet_unref(packet);
     }
 };
 
@@ -932,13 +932,13 @@ bool DecoderContext::next(vector<EncoderContext>& encoder_contexts,
         false == data_unit.more_read_frame &&
         false == data_unit.more_write_frame)
     {
-        packet_unref(data_unit.packe);
+        packet_unref(data_unit.packet);
 
-        if (0 > av_read_frame(avformat_context.get(), data_unit.packe.get()))
+        if (0 > av_read_frame(avformat_context.get(), data_unit.packet.get()))
             data_unit.more_read_packet = false;
         else
         {
-            data_unit.stream_index = data_unit.packe->stream_index;
+            data_unit.stream_index = data_unit.packet->stream_index;
 
             bool input_frames_done = false;
             bool input_packet_done = false;
@@ -966,7 +966,7 @@ bool DecoderContext::next(vector<EncoderContext>& encoder_contexts,
                         input_frames_done = true;
 
                         int response = avcodec_send_packet(decoder.avcodec_context.get(),
-                                                           data_unit.packe.get());
+                                                           data_unit.packet.get());
                         if (response < 0)
                         {
                             //logging("Error while sending packet to decoder: %s", av_err2str(response));
@@ -1144,7 +1144,7 @@ bool EncoderContext::process(DecoderContext& decoder_context,
                 packet_unref(output_packet);
 
                 av_init_packet(output_packet.get());
-                av_packet_ref(output_packet.get(), data_unit.packe.get());
+                av_packet_ref(output_packet.get(), data_unit.packet.get());
 
                 av_packet_rescale_ts(output_packet.get(),
                                      decoder.avstream->time_base,
@@ -1314,7 +1314,8 @@ unordered_map<size_t, InternalModel::ProcessMediaCheckResult> transcoder::loop()
                                                  data_unit))
                 return result;  //  return false
 
-            if (false == data_unit.more_read_frame)
+            if (false == data_unit.more_read_frame &&
+                false == data_unit.more_read_packet)
             {   //  on flush
                 auto& result_item = result_temp[encoder_context.option_index];
                 result_item.count = encoder_context.definitions.front().duration;
