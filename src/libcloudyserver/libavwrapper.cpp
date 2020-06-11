@@ -810,7 +810,8 @@ public:
                                    //decoder.avstream->avg_frame_rate.den /
                                    //decoder.avstream->avg_frame_rate.num;
 
-            duration = double(packet->dts) / avstream->time_base.den * avstream->time_base.num;
+            duration = 1000 * double(packet->dts) /
+                       double(avstream->time_base.den) * double(avstream->time_base.num);
 
             if (0 != av_interleaved_write_frame(avformat_context.get(),
                                                 packet.get()))
@@ -1149,6 +1150,10 @@ bool EncoderContext::process(DecoderContext& decoder_context,
                 av_packet_rescale_ts(output_packet.get(),
                                      decoder.avstream->time_base,
                                      encoder.avstream->time_base);
+
+                encoder.duration = 1000 * double(output_packet->dts) /
+                                    double(encoder.avstream->time_base.den) * double(encoder.avstream->time_base.num);
+
                 if (0 != av_interleaved_write_frame(avformat_context.get(),
                                                     output_packet.get()))
                 {
