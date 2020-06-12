@@ -432,7 +432,7 @@ public:
             }
 
             avcodec_context->time_base = av_inv_q(avcodec_context->framerate);
-            avstream->time_base = avcodec_context->time_base;
+            //avstream->time_base = avcodec_context->time_base;
 //            avcodec_context->time_base = av_mul_q(decoder.avstream->time_base,
 //                                                  av_div_q(avcodec_context->framerate,
 //                                                           input_framerate));
@@ -732,10 +732,14 @@ public:
         avmedia_type = decoder.avmedia_type;
 
         if (!options.transcode)
+        if (0 > avcodec_parameters_copy(avstream->codecpar, decoder.avstream->codecpar))
         {
-            avcodec_parameters_copy(avstream->codecpar, decoder.avstream->codecpar);
-            return true;
+            //logging("failed to copy codec parameters");
+            return false;
         }
+
+        if (!options.transcode)
+            return true;
 
         if (false == create_avcodec(options.transcode->codec))
             return false;
@@ -747,6 +751,12 @@ public:
             return false;
         }
 
+//        if (0 > avcodec_parameters_to_context(avcodec_context.get(), avstream->codecpar))
+//        {
+//            //logging("failed to fill codec context");
+//            return false;
+//        }
+
         avcodec_context_init(*options.transcode, decoder, input_framerate, skip);
 
         if (skip)
@@ -757,7 +767,12 @@ public:
             //logging("could not open the codec");
             return false;
         }
-        avcodec_parameters_from_context(avstream->codecpar, avcodec_context.get());
+
+        if (0 > avcodec_parameters_from_context(avstream->codecpar, avcodec_context.get()))
+        {
+            //logging("failed to fill avstream codec parameters");
+            return false;
+        }
 
         if (false == avfilter_context_init(*options.transcode, decoder, input_framerate))
             return false;
@@ -1115,6 +1130,9 @@ bool EncoderContext::load(size_t option_index_,
         //logging("an error occurred when opening output file");
         return false;
     }
+
+    av_dump_format(avformat_context.get(), 0, filepath.c_str(), 1);
+    return false;
 
     return true;
 }
