@@ -352,7 +352,7 @@ public:
 
             avcodec_context->strict_std_compliance = FF_COMPLIANCE_NORMAL;
 
-            avstream->time_base = avcodec_context->time_base;
+            //avstream->time_base = avcodec_context->time_base;
         }
         else if (decoder.avmedia_type == AVMEDIA_TYPE_VIDEO)
         {
@@ -370,9 +370,16 @@ public:
                 avcodec_context->pix_fmt = decoder.avcodec_context->pix_fmt;
 
             //avcodec_context->bit_rate = 2 * 1000 * 1000;
-            avcodec_context->rc_buffer_size = 4 * 1000 * 1000;
-            avcodec_context->rc_max_rate = 2 * 1000 * 1000;
-            avcodec_context->rc_min_rate = 2.5 * 1000 * 1000;
+            //avcodec_context->rc_buffer_size = 4 * 1000 * 1000;
+            //avcodec_context->rc_max_rate = 2 * 1000 * 1000;
+            //avcodec_context->rc_min_rate = 2.5 * 1000 * 1000;
+
+            // let below options remain here, might be useful for troubleshooting
+            //avcodec_context->profile = FF_PROFILE_H264_BASELINE;
+            //avcodec_context->level = 31;
+            //avcodec_context->bits_per_coded_sample = 24;
+            //avcodec_context->bits_per_raw_sample = 8;
+            //avcodec_context->chroma_sample_location = AVCHROMA_LOC_LEFT;
 
             //  this code may be needed with some encoder
             /*
@@ -432,6 +439,8 @@ public:
             }
 
             avcodec_context->time_base = av_inv_q(avcodec_context->framerate);
+
+            avcodec_context->strict_std_compliance = FF_COMPLIANCE_NORMAL;
             //avstream->time_base = avcodec_context->time_base;
 //            avcodec_context->time_base = av_mul_q(decoder.avstream->time_base,
 //                                                  av_div_q(avcodec_context->framerate,
@@ -593,7 +602,12 @@ public:
                     buffer_argument += av_get_sample_fmt_name(decoder.avcodec_context->sample_fmt);
                     buffer_argument += ":channel_layout=";
                     std::stringstream sstream;
-                    sstream << std::hex << decoder.avcodec_context->channel_layout;
+
+                    if (decoder.avcodec_context->channel_layout)
+                        sstream << std::hex << decoder.avcodec_context->channel_layout;
+                    else
+                        sstream << std::hex << av_get_default_channel_layout(decoder.avcodec_context->channels);
+
                     buffer_argument += /*"0x" + */sstream.str();
 
                     if (0 > avfilter_graph_create_filter(&buffer_context,
@@ -732,14 +746,14 @@ public:
         avmedia_type = decoder.avmedia_type;
 
         if (!options.transcode)
-        if (0 > avcodec_parameters_copy(avstream->codecpar, decoder.avstream->codecpar))
         {
-            //logging("failed to copy codec parameters");
-            return false;
-        }
-
-        if (!options.transcode)
+            if (0 > avcodec_parameters_copy(avstream->codecpar, decoder.avstream->codecpar))
+            {
+                //logging("failed to copy codec parameters");
+                return false;
+            }
             return true;
+        }
 
         if (false == create_avcodec(options.transcode->codec))
             return false;
@@ -751,18 +765,25 @@ public:
             return false;
         }
 
-//        if (0 > avcodec_parameters_to_context(avcodec_context.get(), avstream->codecpar))
-//        {
-//            //logging("failed to fill codec context");
-//            return false;
-//        }
-
         avcodec_context_init(*options.transcode, decoder, input_framerate, skip);
 
         if (skip)
             return true;
 
-        if (0 > avcodec_open2(avcodec_context.get(), avcodec.get(), nullptr))
+        // let below options remain here, might be useful for troubleshooting
+        //AVDictionary* ret = nullptr;
+        //av_dict_set(&ret, "level", "21", 0);
+        //av_dict_set(&ret, "refs", "2", 0);
+        //av_dict_set(&ret, "bt", "345k", 0);
+        //av_dict_set(&ret, "threads", "0", 0);
+
+        //  this is the flag that enables the encoder codex extradata
+        //  so that ios and macos safari can play the h264 video
+        //  not sure - need to check with below "if"?
+        if (avformat_context->oformat->flags & AVFMT_GLOBALHEADER)
+            avcodec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+
+        if (0 > avcodec_open2(avcodec_context.get(), avcodec.get(), nullptr/*&ret*/))
         {
             //logging("could not open the codec");
             return false;
@@ -1066,6 +1087,8 @@ bool EncoderContext::load(size_t option_index_,
         return false;
     }
 
+    //av_dict_set(&avformat_context->metadata, "creation_time", nullptr, 0);
+
     for (auto const& decoder : decoder_context.definitions)
     {
         EncoderCodecContextDefinition encoder;
@@ -1132,7 +1155,6 @@ bool EncoderContext::load(size_t option_index_,
     }
 
     av_dump_format(avformat_context.get(), 0, filepath.c_str(), 1);
-    return false;
 
     return true;
 }
