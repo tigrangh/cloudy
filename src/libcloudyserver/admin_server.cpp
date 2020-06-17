@@ -407,7 +407,6 @@ void admin_server::run(bool& stop_check)
 
                 for (auto const& uri : uris)
                 {
-                    //  need to fix this by checking if other items use this uri too
                     StorageModel::StorageFileDelete storage_request;
                     storage_request.uri = uri;
                     m_pimpl->ptr_direct_stream->send(storage_peerid, packet(std::move(storage_request)));
@@ -471,7 +470,6 @@ void admin_server::run(bool& stop_check)
 
                 for (auto const& uri : uris)
                 {
-                    //  need to fix this by checking if other items use this uri too
                     StorageModel::StorageFileDelete storage_request;
                     storage_request.uri = uri;
                     m_pimpl->ptr_direct_stream->send(storage_peerid, packet(std::move(storage_request)));
@@ -670,25 +668,31 @@ void admin_server::run(bool& stop_check)
             StorageModel::StorageFileAddress request;
             received_packet.get(request);
 
-            m_pimpl->writeln_node("storage got new data: " + request.uri);
+            if (request.duplicate_count > 1)
+                m_pimpl->writeln_node("storage found a duplicate: " + request.uri);
+            else
+                m_pimpl->writeln_node("storage got new data: " + request.uri);
 
             m_pimpl->process_storage_done(request.uri, string());
 
             break;
         }
-        case StorageModel::UriError::rtt:
+        case StorageModel::StorageFileDeleted::rtt:
         {
-            StorageModel::UriError request;
+            StorageModel::StorageFileDeleted request;
             received_packet.get(request);
 
-            if (request.uri_problem_type != StorageModel::UriProblemType::duplicate)
-                throw std::logic_error("request.uri_problem_type != StorageModel::UriProblemType::duplicate");
-
-            m_pimpl->writeln_node("storage found a duplicate: " + request.uri);
-
-            m_pimpl->process_storage_done(request.uri, string());
+            if (0 == request.remaining_count)
+                m_pimpl->writeln_node("storage deleted data: " + request.uri);
+            else
+                m_pimpl->writeln_node("storage decremented refcount: " + request.uri + ", " + std::to_string(request.remaining_count - 1));
 
             break;
+        }
+        case StorageModel::UriError::rtt:
+        {
+            throw std::logic_error("case StorageModel::UriError::rtt:");
+            //break;
         }
         case StorageModel::RemoteError::rtt:
         {

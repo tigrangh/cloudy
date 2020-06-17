@@ -40,29 +40,40 @@ storage::storage(filesystem::path const& path,
 storage::~storage()
 {}
 
-bool storage::put(StorageModel::StorageFile&& file, string& uri)
+uint64_t storage::put(StorageModel::StorageFile&& file, string& uri)
 {
-    bool code = false;
+    uint64_t result;
+
     uri = meshpp::hash(file.data);
     file.data = meshpp::to_base64(file.data, true);
+    file.duplicate_count = 1;
     beltpp::on_failure guard([this]
     {
         m_pimpl->map.discard();
     });
 
-    if (m_pimpl->map.insert(uri, file))
-        code = true;
+    if (m_pimpl->map.contains(uri))
+    {
+        auto& duplicate_count = m_pimpl->map.at(uri).duplicate_count;
+        ++duplicate_count;
+        result = duplicate_count;
+    }
+    else if (m_pimpl->map.insert(uri, file))
+        result = 1;
+    else
+        throw std::logic_error("storage::put: false == m_pimpl->map.insert(uri, file)");
 
     m_pimpl->map.save();
 
     guard.dismiss();
     m_pimpl->map.commit();
-    return code;
+    
+    return result;
 }
 
-bool storage::put_file(StorageModel::StorageFile&& file, string& uri)
+uint64_t storage::put_file(StorageModel::StorageFile&& file, string& uri)
 {
-    bool code = false;
+    uint64_t result;
 
     std::istreambuf_iterator<char> end, begin;
     filesystem::ifstream fl;
@@ -77,20 +88,26 @@ bool storage::put_file(StorageModel::StorageFile&& file, string& uri)
     if (file_contents.size() < 10 * 1024 * 1024)
     {
         file.data = std::move(file_contents);
-        code = put(std::move(file), uri);
+        result = put(std::move(file), uri);
 
         boost::system::error_code ec;
         if (false == filesystem::remove(path, ec) || ec)
             throw std::logic_error("storage::put_file: filesystem::remove(path, ec)");
 
-        return code;
+        return result;
     }
 
     uri = meshpp::hash(file_contents);
 
-    if (false == m_pimpl->map.contains(uri))
+    if (m_pimpl->map.contains(uri))
     {
-        code = true;
+        auto& duplicate_count = m_pimpl->map.at(uri).duplicate_count;
+        ++duplicate_count;
+        result = duplicate_count;
+    }
+    else
+    {
+        result = 1;
 
         filesystem::path new_location = m_pimpl->path_binaries / uri;
 
@@ -100,13 +117,15 @@ bool storage::put_file(StorageModel::StorageFile&& file, string& uri)
             throw std::logic_error("storage::put_file: filesystem::rename(path, new_location, ec)");
 
         file.data = ":PATH_URI:";
+        file.duplicate_count = 1;
 
         beltpp::on_failure guard([this]
         {
             m_pimpl->map.discard();
         });
 
-        m_pimpl->map.insert(uri, file);
+        if (false == m_pimpl->map.insert(uri, file))
+            throw std::logic_error("storage::put_file: false == m_pimpl->map.insert(uri, file)");
 
         m_pimpl->map.save();
 
@@ -114,7 +133,7 @@ bool storage::put_file(StorageModel::StorageFile&& file, string& uri)
         m_pimpl->map.commit();
     }
 
-    return code;
+    return result;
 }
 
 bool storage::get(string const& uri, StorageModel::StorageFile& file)
@@ -147,20 +166,33 @@ bool storage::get(string const& uri, StorageModel::StorageFile& file)
     return true;
 }
 
-bool storage::remove(string const& uri)
+uint64_t storage::remove(string const& uri)
 {
     if (false == m_pimpl->map.contains(uri))
-        return false;
+        return 0;
+
+    auto& file = m_pimpl->map.at(uri);
 
     beltpp::on_failure guard([this]
     {
         m_pimpl->map.discard();
     });
-    m_pimpl->map.erase(uri);
+
+    uint64_t result = file.duplicate_count;
+    assert(result >= 1);
+
+    if (result == 1)
+        m_pimpl->map.erase(uri);
+    else
+        --file.duplicate_count;
+    
     m_pimpl->map.save();
 
-    filesystem::path path(m_pimpl->path_binaries / uri);
-    filesystem::remove(path);
+    if (result == 1)
+    {
+        filesystem::path path(m_pimpl->path_binaries / uri);
+        filesystem::remove(path);
+    }
 
     guard.dismiss();
     m_pimpl->map.commit();

@@ -337,21 +337,15 @@ void storage_server::run(bool& stop)
                 std::move(received_packet).get(storage_file);
 
                 string uri;
-                if (m_pimpl->m_storage.put(std::move(storage_file), uri))
-                {
-                    StorageFileAddress file_address;
-                    file_address.uri = uri;
+                uint64_t duplicate_count = m_pimpl->m_storage.put(std::move(storage_file), uri);
+                assert(duplicate_count);
 
-                    stream.send(peerid, packet(std::move(file_address)));
-                }
-                else
-                {
-                    UriError msg;
-                    msg.uri = uri;
-                    msg.uri_problem_type = UriProblemType::duplicate;
+                StorageFileAddress file_address;
+                file_address.uri = uri;
+                file_address.duplicate_count = duplicate_count;
 
-                    stream.send(peerid, packet(std::move(msg)));
-                }
+                stream.send(peerid, packet(std::move(file_address)));
+                
                 break;
             }
             case StorageFileAdd::rtt:
@@ -364,21 +358,15 @@ void storage_server::run(bool& stop)
                 storage_file.data = storage_file_add.file;
 
                 string uri;
-                if (m_pimpl->m_storage.put_file(std::move(storage_file), uri))
-                {
-                    StorageFileAddress file_address;
-                    file_address.uri = uri;
+                uint64_t duplicate_count = m_pimpl->m_storage.put_file(std::move(storage_file), uri);
+                assert(duplicate_count);
+                
+                StorageFileAddress file_address;
+                file_address.uri = uri;
+                file_address.duplicate_count = duplicate_count;
 
-                    stream.send(peerid, packet(std::move(file_address)));
-                }
-                else
-                {
-                    UriError msg;
-                    msg.uri = uri;
-                    msg.uri_problem_type = UriProblemType::duplicate;
+                stream.send(peerid, packet(std::move(file_address)));
 
-                    stream.send(peerid, packet(std::move(msg)));
-                }
                 break;
             }
             case StorageFileDelete::rtt:
@@ -386,9 +374,13 @@ void storage_server::run(bool& stop)
                 StorageFileDelete storage_file_delete;
                 std::move(received_packet).get(storage_file_delete);
 
-                if (m_pimpl->m_storage.remove(storage_file_delete.uri))
+                uint64_t existing_count = m_pimpl->m_storage.remove(storage_file_delete.uri);
+                if (existing_count)
                 {
-                    stream.send(peerid, packet(Done()));
+                    StorageFileDeleted file_deleted;
+                    file_deleted.uri = storage_file_delete.uri;
+                    file_deleted.remaining_count = existing_count - 1;
+                    stream.send(peerid, packet(std::move(file_deleted)));
                 }
                 else
                 {
