@@ -99,34 +99,57 @@ AdminModel::LibraryResponse library::list(vector<string> const& path) const
     {
         auto const& item = m_pimpl->library_tree.as_const().at(path_string);
 
-        for (auto const& name : item.names)
+        if (item.names)
+        for (auto const& name : *item.names)
         {
             string path = path_string + "/" + name;
 
             auto const& child = m_pimpl->library_tree.as_const().at(path);
 
-            if (false == child.checksums.empty())
+            if (child.checksum)
             {
                 AdminModel::LibraryItemFile file;
                 file.name = name;
-
-                for (auto const& checksum : child.checksums)
-                    file.checksums.push_back(checksum);
+                file.checksum = *child.checksum;
 
                 result.files.push_back(std::move(file));
             }
-
-            if (false == child.names.empty())
+            else if (child.names)
             {
                 AdminModel::LibraryItemDirectory dir;
                 dir.name = name;
 
                 result.directories.push_back(std::move(dir));
             }
+            else
+                throw std::logic_error("library::list: empty library tree child");
+            
         }
     }
 
     return result;
+}
+
+packet library::info(vector<string> const& path) const
+{
+    string path_string = join_path(path).first;
+
+    if (false == m_pimpl->library_tree.contains(path_string))
+        return packet();
+
+    auto const& item = m_pimpl->library_tree.as_const().at(path_string);
+    if (item.checksum)
+    {
+        AdminModel::LibraryItemFile file;
+        file.checksum = *item.checksum;
+
+        return packet(std::move(file));
+    }
+    
+    if (item.names)
+        return packet(AdminModel::LibraryItemDirectory());
+        
+    throw std::logic_error("library::info: empty library tree child");
 }
 
 void library::add(ProcessMediaCheckResult&& progress_item,
@@ -149,7 +172,9 @@ void library::add(ProcessMediaCheckResult&& progress_item,
             m_pimpl->library_tree.insert(path_string, LibraryTree());
 
             LibraryTree& tree_item = m_pimpl->library_tree.at(path_string);
-            tree_item.checksums.insert(sha256sum);
+            if (tree_item.checksum && *tree_item.checksum != sha256sum)
+                throw std::logic_error("library::add: tree_item.checksum && *tree_item.checksum != sha256sum");
+            tree_item.checksum = sha256sum;
 
             m_pimpl->library_index.insert(sha256sum, AdminModel::LibraryIndex());
 
@@ -203,7 +228,9 @@ void library::add(ProcessMediaCheckResult&& progress_item,
             m_pimpl->library_tree.insert(path_string, LibraryTree());
 
             LibraryTree& item = m_pimpl->library_tree.at(path_string);
-            item.names.insert(child);
+            if (!item.names)
+                item.names = unordered_set<string>();
+            item.names->insert(child);
         }
         child = last_name;
 
@@ -220,12 +247,11 @@ unordered_set<string> library::delete_library(vector<string> const& path)
 
     if (m_pimpl->library_tree.contains(path_string))
     {
-        auto& item = m_pimpl->library_tree.at(path_string);
-        auto checksums = item.checksums;
+        auto const& item = m_pimpl->library_tree.as_const().at(path_string);
 
-        for (auto const& checksum : checksums)
+        if (item.checksum)
         {
-            auto uris_local = delete_index(checksum, path);
+            auto uris_local = delete_index(*item.checksum, path);
             for (auto const& uri : uris_local)
                 uris.insert(uri);
         }
@@ -605,12 +631,26 @@ unordered_set<string> library::delete_index(string const& sha256sum,
                     auto& item = m_pimpl->library_tree.at(item_path_string);
 
                     if (child.empty())
-                        item.checksums.erase(sha256sum);
-                    else
-                        item.names.erase(child);
+                    {
+                        if (!item.checksum || sha256sum != *item.checksum)
+                            throw std::logic_error("library::delete_index: !item.checksum || sha256sum != *item.checksum");
 
-                    if (item.names.empty() &&
-                        item.checksums.empty())
+                        item.checksum = optional<string>();
+                    }
+                    else
+                    {
+                        if (!item.names)
+                            throw std::logic_error("library::delete_index: !item.names");
+
+                        size_t erased = item.names->erase(child);
+                        if (0 == erased)
+                            throw std::logic_error("library::delete_index: 0 == erased");
+                    }
+
+                    if (item.checksum)
+                        throw std::logic_error("library::delete_index: item.checksum");
+
+                    if (!item.names)
                     {
                         m_pimpl->library_tree.erase(item_path_string);
                         child = index_item_path.back();

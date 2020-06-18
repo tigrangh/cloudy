@@ -24,6 +24,9 @@ bool analyze_json(optional<T>& value,
 template <typename T>
 inline
 std::string saver(optional<T> const& value);
+template <typename T>
+inline
+bool less(optional<T> const& first, optional<T> const& second);
 }
 }
 
@@ -63,6 +66,13 @@ std::string saver(optional<T> const& value)
     if (value)
         return saver(*value);
     return std::string();
+}
+template <typename T>
+inline
+bool less(optional<T> const& first, optional<T> const& second)
+{
+    std::less<std::string> c;
+    return c(saver(first), saver(second));
 }
 }
 }

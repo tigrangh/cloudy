@@ -5,8 +5,8 @@ module InternalModel
     ///
     class LibraryTree
     {
-        Set String names
-        Set String checksums
+        Optional Set String names
+        Optional String checksum
     }
 
     class PendingForIndexItem

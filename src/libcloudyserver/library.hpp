@@ -47,6 +47,7 @@ public:
     void clear();
 
     AdminModel::LibraryResponse list(std::vector<std::string> const& path) const;
+    beltpp::packet info(std::vector<std::string> const& path) const;
     void add(InternalModel::ProcessMediaCheckResult&& progress_item,
              std::string const& uri,
              std::string const& sha256sum);

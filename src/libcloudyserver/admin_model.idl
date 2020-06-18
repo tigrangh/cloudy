@@ -46,7 +46,7 @@ module AdminModel
     class LibraryItemFile
     {
         String name
-        Array String checksums
+        String checksum
     }
 
     class LibraryItemDirectory

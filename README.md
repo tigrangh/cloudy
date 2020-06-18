@@ -65,12 +65,12 @@ This is an asyncronous request.
 user@pc:~$ curl "127.0.0.1:4444/log"
 {"rtt":12,"log":[{"rtt":13,"path":["path","to","media","file.mp4"]}]}
 ```
-The array "log" will be empty unless the video transcoding is over. When it's done we have the log entry as in the example above. There are different codes to indicate an error, warning or success. The above example shows success.
+The array "log" will be empty unless the waiting for the video transcoding is over. When it's done we have the log entry as in the example above. There are different codes to indicate an error, warning or success. The above example shows success.
 
 ### So, what is done actually?
 ```console
 user@pc:~$ curl "127.0.0.1:4444/library/path/to/media"
-{"rtt":7,"files":[{"rtt":8,"name":"file.mp4","checksums":["GvN8WbnpBtXe6GzJPbQtmanD6gxg7Bt8XHibwU7x546m"]}],"directories":[]}
+{"rtt":7,"files":[{"rtt":8,"name":"file.mp4","checksum":"GvN8WbnpBtXe6GzJPbQtmanD6gxg7Bt8XHibwU7x546m"}],"directories":[]}
 ```
 With this we get the checksum of the file - sha256 hash  
 And then
@@ -194,7 +194,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 8,
         "properties": {
             "name": { "type": "String"},
-            "checksums": { "type": "Array String"},
+            "checksum": { "type": "String"},
         }
     },
 

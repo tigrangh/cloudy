@@ -591,6 +591,21 @@ void admin_server::run(bool& stop_check)
                         m_pimpl->library.process_index_store_hash(request.path,
                                                                   request.type_descriptions,
                                                                   request.sha256sum);
+
+                bool can_continue_with_check = false;
+                auto existing_info = m_pimpl->library.info(request.path);
+                if (existing_info.type() == LibraryItemFile::rtt)
+                {
+                    LibraryItemFile file_item;
+                    std::move(existing_info).get(file_item);
+
+                    if (file_item.checksum == request.sha256sum)
+                        can_continue_with_check = true;
+                }
+                else if (existing_info.empty())
+                    can_continue_with_check = true;
+
+                
                 if (type_descriptions_temp.empty())
                 {
                     m_pimpl->writeln_node(join_path(request.path).first + ": with hash " +
@@ -602,6 +617,18 @@ void admin_server::run(bool& stop_check)
                     CheckMediaError not_accepted;
                     not_accepted.path = request.path;
                     not_accepted.reason = "is already indexed and scheduled for media check";
+                    m_pimpl->log->log.push_back(packet(std::move(not_accepted)));
+                }
+                else if (false == can_continue_with_check)
+                {
+                    m_pimpl->writeln_node(join_path(request.path).first + ": with hash " +
+                                          request.sha256sum +
+                                          " cannot be checked, because there is already a different file or a directory");
+                    m_pimpl->library.process_index_done(request.path, request.type_descriptions);
+
+                    CheckMediaError not_accepted;
+                    not_accepted.path = request.path;
+                    not_accepted.reason = "please delete this path first";
                     m_pimpl->log->log.push_back(packet(std::move(not_accepted)));
                 }
                 else
