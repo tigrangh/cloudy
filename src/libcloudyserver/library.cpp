@@ -108,18 +108,18 @@ AdminModel::LibraryResponse library::list(vector<string> const& path) const
 
             if (child.checksum)
             {
-                AdminModel::LibraryItemFile file;
+                AdminModel::FileItem file;
                 file.name = name;
                 file.checksum = *child.checksum;
 
-                result.files.push_back(std::move(file));
+                result.lib_files.push_back(std::move(file));
             }
             else if (child.names)
             {
-                AdminModel::LibraryItemDirectory dir;
+                AdminModel::DirectoryItem dir;
                 dir.name = name;
 
-                result.directories.push_back(std::move(dir));
+                result.lib_directories.push_back(std::move(dir));
             }
             else
                 throw std::logic_error("library::list: empty library tree child");
@@ -140,14 +140,14 @@ packet library::info(vector<string> const& path) const
     auto const& item = m_pimpl->library_tree.as_const().at(path_string);
     if (item.checksum)
     {
-        AdminModel::LibraryItemFile file;
+        AdminModel::FileItem file;
         file.checksum = *item.checksum;
 
         return packet(std::move(file));
     }
     
     if (item.names)
-        return packet(AdminModel::LibraryItemDirectory());
+        return packet(AdminModel::DirectoryItem());
         
     throw std::logic_error("library::info: empty library tree child");
 }
@@ -602,10 +602,11 @@ AdminModel::IndexListResponse library::list_index(std::string const& sha256sum) 
     return result;
 }
 
-unordered_set<string> library::delete_index(string const& sha256sum,
+unordered_set<string> library::delete_index(string const& sha256sum_,
                                             vector<string> const& only_path)
 {
     unordered_set<string> uris;
+    auto sha256sum = sha256sum_;
 
     if (m_pimpl->library_index.contains(sha256sum))
     {
@@ -645,6 +646,9 @@ unordered_set<string> library::delete_index(string const& sha256sum,
                         size_t erased = item.names->erase(child);
                         if (0 == erased)
                             throw std::logic_error("library::delete_index: 0 == erased");
+                        
+                        if (item.names->empty())
+                            item.names = optional<unordered_set<string>>();
                     }
 
                     if (item.checksum)

@@ -8,14 +8,14 @@ For now, the only type of supported media is video.
 1. HTTP/JSON RPC admin API, that allows to add local files to the internal index.
 1. Internal persistent storage, used to store the media index, organized using a tree like hierarchical structure and the media files, in particular the transcoded video files.
 1. Video transcoder, based on multiple profiles. Any video file has several transcoded versions.
+1. A very low level, simple admin page. See "dashboard" below.
 
 ## What this lacks
-1. A front-end
+1. A proper front-end. This is intended to be integrated into a bigger system.
 1. User management
 1. A full HTTP 1.1 server. Instead here is a stripped down, custom implementation.
 
 ## Expected enhancements
-1. Video transcoder settings can be tweaked and fixed for web compatibility, by changing the request arguments.
 1. ffmpeg libav wrapper needs more fixes.
 1. Extended support of other media types such as image, pdf, audio.
 1. Static front-end generator, maybe.
@@ -55,9 +55,9 @@ Use also -k option to define a cryptographic private key. just run once without 
 Consider `/path/to/media/file.mp4` to be a local video file
 ```console
 user@pc:~$ curl -X PUT --data '[{"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":720, "width":1280, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":360, "width":640, "fps":29}}}}]' "127.0.0.1:4444/library/path/to/media/file.mp4"
-{"rtt":5,"files":[],"directories":[]}
+{"rtt":7,"lib_files":[],"lib_directories":[],"fs_files":["file.mp4"],"fs_directories":[]}
 ```
-The response shows already existing files and folders in the library (in the current directory), in this case nothing yet.
+The response shows already existing files and folders in the library and in the fs (in the current directory), in this case nothing yet in the library.
 This is an asyncronous request.
 
 ### Check to know when the video is processed
@@ -70,7 +70,7 @@ The array "log" will be empty unless the waiting for the video transcoding is ov
 ### So, what is done actually?
 ```console
 user@pc:~$ curl "127.0.0.1:4444/library/path/to/media"
-{"rtt":7,"files":[{"rtt":8,"name":"file.mp4","checksum":"GvN8WbnpBtXe6GzJPbQtmanD6gxg7Bt8XHibwU7x546m"}],"directories":[]}
+{"rtt":7,"lib_files":[{"rtt":8,"name":"file.mp4","checksum":"GvN8WbnpBtXe6GzJPbQtmanD6gxg7Bt8XHibwU7x546m"}],"lib_directories":[],"fs_files":[],"fs_directories":[]}
 ```
 With this we get the checksum of the file - sha256 hash  
 And then
@@ -107,11 +107,16 @@ We can "upload" any file to cloudy. For example let's have `/path/to/index.html`
 Then
 ```console
 user@pc:~$ curl -X PUT --data '[{"rtt":28, "mime_type":"text/html"}]' "127.0.0.1:4444/library/path/to/index.html"
-{"rtt":5,"files":[],"directories":[]}
+{"rtt":7,"lib_files":[],"lib_directories":[],"fs_files":["index.html"],"fs_directories":[]}
 ```
 
 With this we do a similar thing as above when adding a video file to library, but instead of telling cloudy to transcode a video file, we simply ask it to copy this file to internal structure, and remember its mime-type as "text/html".
 Following the examples from above steps, we can get the url of this simple html page, and share it with other people or services.
+
+### Dashboard
+
+The API described above is demonstrated with "dashboard.html" file included in the repository. A simple JS application, that allows easier access to the server.
+This application is also embedded inside the server and can be accessed with the url `127.0.0.1:4444/dashboard`.
 
 ### JSON protocol
 
@@ -184,23 +189,25 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 7,
         "properties": {
-            "files": { "type": "Array LibraryItemFile"},
-            "directories": { "type": "Array LibraryItemDirectory"},
+            "lib_files": { "type": "Array FileItem"},
+            "lib_directories": { "type": "Array DirectoryItem"},
+            "fs_files": { "type": "Array FileItem"},
+            "fs_directories": { "type": "Array DirectoryItem"},
         }
     },
 
-    "LibraryItemFile": {
+    "FileItem": {
         "type": "object",
         "rtt": 8,
         "properties": {
             "name": { "type": "String"},
-            "checksum": { "type": "String"},
+            "checksum": { "type": "Optional String"},
         }
     },
 
 
 
-    "LibraryItemDirectory": {
+    "DirectoryItem": {
         "type": "object",
         "rtt": 9,
         "properties": {

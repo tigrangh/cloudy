@@ -281,6 +281,29 @@ beltpp::detail::pmsg_all message_list_load(
         }
         else if (ss.type == beltpp::http::detail::scan_status::get &&
                  ss.resource.path.size() == 1 &&
+                 ss.resource.path.front() == "dashboard")
+        {
+            ssd.session_specal_handler = nullptr;
+
+            string dashboard_buffer = detail::dashboard();
+
+            string dashboard_result;
+            dashboard_result += "HTTP/1.1 200 OK\r\n";
+            dashboard_result += "Content-Type: text/html\r\n";
+            dashboard_result += "Access-Control-Allow-Origin: *\r\n";
+            dashboard_result += "Content-Length: ";
+            dashboard_result += std::to_string(dashboard_buffer.size());
+            dashboard_result += "\r\n\r\n";
+            dashboard_result += dashboard_buffer;
+
+            ssd.autoreply = dashboard_result;
+
+            return ::beltpp::detail::pmsg_all(size_t(-1),
+                                              ::beltpp::void_unique_nullptr(),
+                                              nullptr);
+        }
+        else if (ss.type == beltpp::http::detail::scan_status::get &&
+                 ss.resource.path.size() == 1 &&
                  ss.resource.path.front() == "protocol")
         {
             ssd.session_specal_handler = nullptr;

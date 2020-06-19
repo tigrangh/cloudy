@@ -105,5 +105,6 @@ wait_result_item wait_and_receive_one(wait_result& wait_result_info,
                                              beltpp::stream& event_stream,
                                              beltpp::stream* on_demand_stream);
 
+std::string dashboard();
 }
 }

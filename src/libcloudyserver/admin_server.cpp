@@ -274,6 +274,57 @@ public:
         }
     }
 };
+
+void fill_with_fs(AdminModel::LibraryResponse& library_result, vector<string> const& path)
+{
+    filesystem::path current_path("/");
+    for (auto const& dir : path)
+        current_path /= dir;
+
+    if (filesystem::is_directory(current_path))
+    {
+        unordered_set<string> set_files, set_dirs;
+        for (auto const& dir_item : library_result.lib_directories)
+            set_dirs.insert(dir_item.name);
+        for (auto const& file_item : library_result.lib_files)
+            set_files.insert(file_item.name);
+
+        filesystem::directory_iterator it_end;
+        filesystem::directory_iterator it(current_path);
+
+        for (; it != it_end; ++it)
+        {
+            if (filesystem::is_regular_file(it->path()) &&
+                0 == set_files.count(it->path().filename().string()))
+            {
+                AdminModel::FileItem item;
+                item.name = it->path().filename().string();
+                library_result.fs_files.push_back(item);
+            }
+            else if (filesystem::is_directory(it->path()) &&
+                     0 == set_dirs.count(it->path().filename().string()))
+            {
+                AdminModel::DirectoryItem item;
+                item.name = it->path().filename().string();
+                library_result.fs_directories.push_back(item);
+            }
+        }
+    }
+
+    auto compare_dirs = [](AdminModel::DirectoryItem const& first, AdminModel::DirectoryItem const& second)
+    {
+        return first.name < second.name;
+    };
+    auto compare_files = [](AdminModel::FileItem const& first, AdminModel::FileItem const& second)
+    {
+        return first.name < second.name;
+    };
+
+    std::sort(library_result.fs_directories.begin(), library_result.fs_directories.end(), compare_dirs);
+    std::sort(library_result.fs_files.begin(), library_result.fs_files.end(), compare_files);
+    std::sort(library_result.lib_directories.begin(), library_result.lib_directories.end(), compare_dirs);
+    std::sort(library_result.lib_files.begin(), library_result.lib_files.end(), compare_files);
+}
 }
 
 using namespace AdminModel;
@@ -419,7 +470,11 @@ void admin_server::run(bool& stop_check)
                 LibraryGet request;
                 std::move(received_packet).get(request);
 
-                stream.send(peerid, packet(m_pimpl->library.list(request.path)));
+                auto library_result = m_pimpl->library.list(request.path);
+                
+                detail::fill_with_fs(library_result, request.path);
+
+                stream.send(peerid, packet(std::move(library_result)));
                 break;
             }
             case LibraryPut::rtt:
@@ -449,7 +504,12 @@ void admin_server::run(bool& stop_check)
 
                     request.path.pop_back();
                 }
-                stream.send(peerid, packet(m_pimpl->library.list(request.path)));
+
+                auto library_result = m_pimpl->library.list(request.path);
+                
+                detail::fill_with_fs(library_result, request.path);
+
+                stream.send(peerid, packet(std::move(library_result)));
 
                 break;
             }
@@ -466,7 +526,11 @@ void admin_server::run(bool& stop_check)
                     request.path.pop_back();
                 }
 
-                stream.send(peerid, packet(m_pimpl->library.list(request.path)));
+                auto library_result = m_pimpl->library.list(request.path);
+                
+                detail::fill_with_fs(library_result, request.path);
+
+                stream.send(peerid, packet(std::move(library_result)));
 
                 for (auto const& uri : uris)
                 {
@@ -594,12 +658,15 @@ void admin_server::run(bool& stop_check)
 
                 bool can_continue_with_check = false;
                 auto existing_info = m_pimpl->library.info(request.path);
-                if (existing_info.type() == LibraryItemFile::rtt)
+                if (existing_info.type() == FileItem::rtt)
                 {
-                    LibraryItemFile file_item;
+                    FileItem file_item;
                     std::move(existing_info).get(file_item);
 
-                    if (file_item.checksum == request.sha256sum)
+                    if (!file_item.checksum)
+                        throw std::logic_error("case InternalModel::ProcessIndexResult::rtt: !file_item.checksum");
+
+                    if (*file_item.checksum == request.sha256sum)
                         can_continue_with_check = true;
                 }
                 else if (existing_info.empty())

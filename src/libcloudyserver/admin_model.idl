@@ -39,17 +39,20 @@ module AdminModel
 
     class LibraryResponse
     {
-        Array LibraryItemFile files
-        Array LibraryItemDirectory directories
+        Array FileItem lib_files
+        Array DirectoryItem lib_directories
+
+        Array FileItem fs_files
+        Array DirectoryItem fs_directories
     }
 
-    class LibraryItemFile
+    class FileItem
     {
         String name
-        String checksum
+        Optional String checksum
     }
 
-    class LibraryItemDirectory
+    class DirectoryItem
     {
         String name
     }
