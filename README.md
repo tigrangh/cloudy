@@ -54,7 +54,7 @@ Use also -k option to define a cryptographic private key. just run once without 
 
 ### Dashboard
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/X7uiamnlPHY" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+[![Cloudy dashboard](https://img.youtube.com/vi/X7uiamnlPHY/0.jpg)](https://www.youtube.com/watch?v=X7uiamnlPHY "Cloudy dashboard")
 
 In below sections, there are the details about the API. This video is a quick demonstration of the features of Cloudy.  
 This simple JS application is included in the repository as "dashboard.html".  
