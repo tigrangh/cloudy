@@ -51,6 +51,15 @@ Use also -k option to define a cryptographic private key. just run once without 
 
 ## Minimal usage example
 
+
+### Dashboard
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/X7uiamnlPHY" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+In below sections, there are the details about the API. This video is a quick demonstration of the features of Cloudy.  
+This simple JS application is included in the repository as "dashboard.html".  
+This application is also embedded inside the server and can be accessed with the url `127.0.0.1:4444/dashboard`.
+
 ### Add a file to media library
 Consider `/path/to/media/file.mp4` to be a local video file
 ```console
@@ -112,11 +121,6 @@ user@pc:~$ curl -X PUT --data '[{"rtt":28, "mime_type":"text/html"}]' "127.0.0.1
 
 With this we do a similar thing as above when adding a video file to library, but instead of telling cloudy to transcode a video file, we simply ask it to copy this file to internal structure, and remember its mime-type as "text/html".
 Following the examples from above steps, we can get the url of this simple html page, and share it with other people or services.
-
-### Dashboard
-
-The API described above is demonstrated with "dashboard.html" file included in the repository. A simple JS application, that allows easier access to the server.
-This application is also embedded inside the server and can be accessed with the url `127.0.0.1:4444/dashboard`.
 
 ### JSON protocol
 

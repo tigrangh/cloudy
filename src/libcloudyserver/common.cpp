@@ -218,6 +218,7 @@ std::string dashboard()
     class RequestInfo {
         constructor() {
             this.currentdir = [];
+            this.admin = '';
 
             var s1 = location.search.substring(1, location.search.length).split('&');
             var s2, i;
@@ -226,7 +227,7 @@ std::string dashboard()
 
                 var key = decodeURIComponent(s2[0]).toLowerCase();
                 var value = decodeURIComponent(s2[1]);
-                if (key == "admin")
+                if (key == "admin" && location.protocol != "http:")
                     this.admin = value;
                 else if (key == "storage")
                     this.storage = value;
@@ -239,9 +240,20 @@ std::string dashboard()
 
         getHref()
         {
-            var href = this.location.origin + this.location.pathname + "?admin=" + encodeURIComponent(this.admin) + "&storage=" + encodeURIComponent(this.storage);
+            var admin_part = '?';
+            var parts = [];
+            if (this.admin.length)
+                parts.push("admin=" + encodeURIComponent(this.admin));
+            
+            if (this.storage.length)
+                parts.push("storage=" + encodeURIComponent(this.storage));
+
             for (var dir_item of this.currentdir)
-                href += "&dir=" + dir_item;
+                parts.push("dir=" + dir_item);
+
+            var href = this.location.origin + this.location.pathname;
+            if (parts.length)
+                href += "?" + parts.join("&");
             
             return href;
         }
@@ -353,7 +365,8 @@ std::string dashboard()
 
         if (0 == Singleton.Dashboard().waiting)
         try {
-            if (0 == document.getElementById("admin").value.length)
+            if (0 == document.getElementById("admin").value.length &&
+                0 != Singleton.Dashboard().requestInfo.admin.length)
                 document.getElementById("admin").value = Singleton.Dashboard().requestInfo.admin;
             if (0 == document.getElementById("storage").value.length)
                 document.getElementById("storage").value = Singleton.Dashboard().requestInfo.storage;
@@ -375,6 +388,10 @@ std::string dashboard()
 
     function updateUI()
     {
+        if (location.protocol == "http:") {
+            document.getElementById("div_admin").style.display = "none";
+        }
+
         var log_list = document.getElementById('log');
         log_list.innerHTML = "";
 
@@ -405,7 +422,11 @@ std::string dashboard()
         if (Singleton.Dashboard().requestInfo.currentdir.length)
         {
             var entry = document.createElement('li');
-            entry.innerHTML = "<a href='javascript:dirGoUp();'>..</a>";
+            entry.innerHTML = "<a href='javascript:dirGoUp();'>UP</a>";
+            fs_dirs_list.appendChild(entry);
+
+            entry = document.createElement('li');
+            entry.innerHTML = "&nbsp";
             fs_dirs_list.appendChild(entry);
         }
         for (var dir_entry of Singleton.Dashboard().currentdir_fs_dirs)
@@ -431,7 +452,11 @@ std::string dashboard()
         if (Singleton.Dashboard().requestInfo.currentdir.length)
         {
             var entry = document.createElement('li');
-            entry.innerHTML = "<a href='javascript:dirGoUp();'>..</a>";
+            entry.innerHTML = "<a href='javascript:dirGoUp();'>UP</a>";
+            lib_dirs_list.appendChild(entry);
+
+            entry = document.createElement('li');
+            entry.innerHTML = "&nbsp";
             lib_dirs_list.appendChild(entry);
         }
         for (var dir_entry of Singleton.Dashboard().currentdir_lib_dirs)
@@ -458,7 +483,8 @@ std::string dashboard()
         }
         if (0 == Singleton.Dashboard().filechecksum.length) {
             document.getElementById("div_lib_file").style.display = "none";
-            document.getElementById("authorization").value = "";
+            document.getElementById("authorization").href = "";
+            document.getElementById("authorization").innerHTML = "";
         } else {
 
             document.getElementById("div_lib_file").style.display = "block";
@@ -471,15 +497,14 @@ std::string dashboard()
 
                 for (var frame_info of media_info.frames) {
                     var entry = document.createElement('li');
+                    entry.innerHTML += "<a href='javascript:getAuthorization(\"" + frame_info.uri + "\");'>" + frame_info.uri +"</a>";
                     if (media_info.video)
                     {
-                        entry.innerHTML += "video: duration - " + frame_info.count + " ms, height - " + media_info.video.height + ", width - " + media_info.video.width + ", fps - " + media_info.video.fps + " ";
+                        entry.innerHTML += "<br>&nbsp&nbsp&nbsp video: duration - " + frame_info.count + " ms, height - " + media_info.video.height + ", width - " + media_info.video.width + ", fps - " + media_info.video.fps + " ";
                     }
-                    entry.innerHTML += "<a href='javascript:getAuthorization(\"" + frame_info.uri + "\");'>" + frame_info.uri +"</a>";
                     lib_uris_list.appendChild(entry);
                 }
             }
-
         }
     }
 
@@ -647,11 +672,10 @@ std::string dashboard()
                         recovery_function();
                 }
 
-                var copyText = document.getElementById("authorizatoin");
-                copyText.value = Singleton.Dashboard().requestInfo.storage + "/storage?authorization=" + encodeURIComponent(text);
-                copyText.setSelectionRange(0, 99999);
-
-                copyText.select();
+                var link = document.getElementById("authorization");
+                var authorization = Singleton.Dashboard().requestInfo.storage + "/storage?authorization=" + encodeURIComponent(text);
+                link.innerHTML = authorization;
+                link.href = authorization;
             }
         };
 
@@ -740,6 +764,12 @@ std::string dashboard()
     {
         if (0 == Singleton.Dashboard().filetocheck.length)
             return;
+        
+        var mime_type = document.getElementById("raw_mime").value;
+        if (!mime_type || 0 == mime_type.length) {
+            alert('the mime type is empty');
+            return;
+        }
 
         var addraw_request = new XMLHttpRequest();
         addraw_request.onreadystatechange = function() {
@@ -766,7 +796,7 @@ std::string dashboard()
         };
 
         var check_options = {"rtt":28, "mime_type":"text/html"};
-        check_options.mime_type = document.getElementById("raw_mime").value;
+        check_options.mime_type = mime_type;
         
         addraw_request.open("PUT", Singleton.Dashboard().requestInfo.admin + "/library/" + Singleton.Dashboard().requestInfo.currentdir.join("/") + "/" + Singleton.Dashboard().filetocheck, true);
         addraw_request.send(JSON.stringify([check_options]));
@@ -891,11 +921,11 @@ std::string dashboard()
         get_dir_request.send();
         Singleton.Dashboard().waiting++;
     }
+    function autoupdate() {
+        if (Singleton.Dashboard().autorefresh)
+            update(true);
+    }
     function eventloop() {
-        var autoupdate = function () {
-            if (Singleton.Dashboard().autorefresh)
-                update(true);
-        }
         autoupdate();
         var intervalID = window.setInterval(autoupdate, 2000);
     }
@@ -933,12 +963,16 @@ std::string dashboard()
             }
         </style>
 
-        <label>admin:</label>
-        <input type="text" id="admin">
-        <button onclick = "readInput()">Set</button><br>
-        <label>storage:</label>
-        <input type="text" id="storage">
-        <button onclick = "readInput()">Set</button><br><br>
+        <div id="div_admin">
+            <label>admin:&nbsp&nbsp</label>
+            <input type="text" id="admin">
+            <button onclick = "readInput()">Set</button><br>
+        </div>
+        <div>
+            <label>storage:</label>
+            <input type="text" id="storage">
+            <button onclick = "readInput()">Set</button><br><br>
+        </div>
         <label class="switch">
             auto refresh
             <input type="checkbox" id="autorefresh" onclick="readInput()">
@@ -991,10 +1025,11 @@ std::string dashboard()
             <button onclick = "addraw()">add raw</button>
         </div>
         <div id="div_lib_file">
-            <label>checksum: </label>
+            <label>media checksum: </label>
             <label id="label_lib_checksum"></label><br><br>
 
             <input type="number" id="seconds" value="86400"> <label>authorization seconds</label><br><br>
+            <a target="_blank" href="" id="authorization"></a><br><br>
 
             <ul id="uris" class="nobullets">
             </ul>
@@ -1006,8 +1041,6 @@ std::string dashboard()
             <label> or </label>
             
             <button onclick = "delete_checksum()">checksum</button><br><br><br>
-
-            <input type="text" id="authorizatoin">
         </div>
     </body>
 </html>
