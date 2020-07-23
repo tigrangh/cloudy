@@ -54,7 +54,7 @@ public:
     unique_ptr<beltpp::event_handler> ptr_eh;
     unique_ptr<beltpp::socket> ptr_socket;
 
-    stream_ptr ptr_direct_stream;
+    beltpp::stream_ptr ptr_direct_stream;
 
     cloudy::storage m_storage;
 
@@ -66,11 +66,11 @@ public:
                              filesystem::path const& path_binaries,
                              meshpp::public_key const& _pb_key,
                              beltpp::ilog* _plogger,
-                             direct_channel& channel)
+                             beltpp::direct_channel& channel)
         : plogger(_plogger)
         , ptr_eh(beltpp::libsocket::construct_event_handler())
         , ptr_socket(beltpp::libsocket::getsocket<rpc_storage_sf>(*ptr_eh))
-        , ptr_direct_stream(cloudy::construct_direct_stream(storage_peerid, *ptr_eh, channel))
+        , ptr_direct_stream(beltpp::construct_direct_stream(storage_peerid, *ptr_eh, channel))
         , m_storage(path, path_binaries)
         , pb_key(_pb_key)
     {
@@ -106,7 +106,7 @@ storage_server::storage_server(beltpp::ip_address const& bind_to_address,
                                filesystem::path const& path_binaries,
                                meshpp::public_key const& pb_key,
                                beltpp::ilog* plogger,
-                               direct_channel& channel)
+                               beltpp::direct_channel& channel)
     : m_pimpl(new detail::storage_server_internals(bind_to_address,
                                                    path,
                                                    path_binaries,

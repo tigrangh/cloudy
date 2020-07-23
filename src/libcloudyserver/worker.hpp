@@ -2,9 +2,8 @@
 
 #include "global.hpp"
 
-#include "direct_stream.hpp"
-
 #include <belt.pp/ilog.hpp>
+#include <belt.pp/direct_stream.hpp>
 
 #include <boost/filesystem/path.hpp>
 
@@ -22,7 +21,7 @@ class CLOUDYSERVERSHARED_EXPORT worker
 public:
     worker(beltpp::ilog* plogger,
            boost::filesystem::path const& fs,
-           direct_channel& channel);
+           beltpp::direct_channel& channel);
     worker(worker&& other) noexcept;
     ~worker();
 

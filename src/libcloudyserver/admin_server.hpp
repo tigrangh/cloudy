@@ -2,10 +2,9 @@
 
 #include "global.hpp"
 
-#include "direct_stream.hpp"
-
 #include <belt.pp/isocket.hpp>
 #include <belt.pp/ilog.hpp>
+#include <belt.pp/direct_stream.hpp>
 #include <mesh.pp/cryptoutility.hpp>
 
 #include <boost/filesystem/path.hpp>
@@ -27,7 +26,7 @@ public:
                  boost::filesystem::path const& fs_admin,
                  meshpp::private_key const& pv_key,
                  beltpp::ilog* plogger,
-                 direct_channel& channel);
+                 beltpp::direct_channel& channel);
     admin_server(admin_server&& other) noexcept;
     ~admin_server();
 

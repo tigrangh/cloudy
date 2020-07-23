@@ -1,10 +1,10 @@
 #include <cloudy/admin_server.hpp>
 #include <cloudy/storage_server.hpp>
 #include <cloudy/worker.hpp>
-#include <cloudy/direct_stream.hpp>
 
 #include <belt.pp/log.hpp>
 #include <belt.pp/scope_helper.hpp>
+#include <belt.pp/direct_stream.hpp>
 
 #include <mesh.pp/settings.hpp>
 #include <mesh.pp/pid.hpp>
@@ -151,7 +151,7 @@ int main(int argc, char** argv)
         plogger_worker_exceptions = meshpp::file_logger("worker_exceptions",
                                                          fs_log / "worker_exceptions.txt");
 
-        cloudy::direct_channel direct_channel;
+        beltpp::direct_channel direct_channel;
 
         cloudy::admin_server admin(admin_bind_to_address,
                                    fs_library,

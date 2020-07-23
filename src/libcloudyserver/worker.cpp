@@ -36,6 +36,8 @@ using std::unordered_map;
 using std::unique_ptr;
 using std::vector;
 using std::pair;
+using beltpp::stream_ptr;
+using beltpp::event_handler_ptr;
 
 namespace filesystem = boost::filesystem;
 
@@ -205,11 +207,11 @@ public:
 
     worker_internals(beltpp::ilog* _plogger,
                      filesystem::path const& _fs,
-                     direct_channel& channel)
+                     beltpp::direct_channel& channel)
         : plogger(_plogger)
         , ptr_eh(beltpp::libprocessor::construct_event_handler())
         , ptr_stream(construct_processor_wrap(*ptr_eh, 2, &processor_worker))
-        , ptr_direct_stream(cloudy::construct_direct_stream(worker_peerid, *ptr_eh, channel))
+        , ptr_direct_stream(beltpp::construct_direct_stream(worker_peerid, *ptr_eh, channel))
         , fs(_fs)
     {
         //ptr_eh->set_timer(event_timer_period);
@@ -234,7 +236,7 @@ public:
  */
 worker::worker(beltpp::ilog* plogger,
                filesystem::path const& fs,
-               direct_channel& channel)
+               beltpp::direct_channel& channel)
     : m_pimpl(new detail::worker_internals(plogger,
                                            fs,
                                            channel))

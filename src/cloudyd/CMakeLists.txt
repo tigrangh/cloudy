@@ -12,6 +12,7 @@ target_link_libraries(cloudyd PRIVATE
     cryptoutility
     log
     mlog
+    direct_stream
     Boost::filesystem
     Boost::program_options
     Boost::locale

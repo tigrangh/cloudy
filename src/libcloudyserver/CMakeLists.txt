@@ -29,8 +29,6 @@ add_library(cloudyserver
     admin_server.hpp
     common.cpp
     common.hpp
-    direct_stream.cpp
-    direct_stream.hpp
     libavwrapper.cpp
     libavwrapper.hpp
     internal_model.hpp
@@ -51,6 +49,7 @@ add_library(cloudyserver
 target_link_libraries(cloudyserver
     PUBLIC
         cloudy
+        direct_stream
     INTERFACE
         belt.pp
     PRIVATE
@@ -170,5 +169,4 @@ install(FILES
     admin_server.hpp
     storage_server.hpp
     worker.hpp
-    direct_stream.hpp
     DESTINATION ${CLOUDY_INSTALL_DESTINATION_INCLUDE}/liblog)

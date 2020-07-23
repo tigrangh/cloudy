@@ -19,7 +19,6 @@ install(TARGETS cloudy
 set(SRC_FILES
     global.hpp
     admin_server.hpp
-    direct_stream.hpp
     storage_server.hpp
     worker.hpp)
 

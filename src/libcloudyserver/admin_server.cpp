@@ -60,7 +60,7 @@ public:
     event_handler_ptr ptr_eh;
     socket_ptr ptr_socket;
 
-    stream_ptr ptr_direct_stream;
+    beltpp::stream_ptr ptr_direct_stream;
 
     cloudy::library library;
     meshpp::file_loader<AdminModel::Log,
@@ -77,11 +77,11 @@ public:
                            filesystem::path const& fs_admin,
                            meshpp::private_key const& _pv_key,
                            ilog* _plogger,
-                           direct_channel& channel)
+                           beltpp::direct_channel& channel)
         : plogger(_plogger)
         , ptr_eh(beltpp::libsocket::construct_event_handler())
         , ptr_socket(beltpp::libsocket::getsocket<rpc_sf>(*ptr_eh))
-        , ptr_direct_stream(cloudy::construct_direct_stream(admin_peerid, *ptr_eh, channel))
+        , ptr_direct_stream(beltpp::construct_direct_stream(admin_peerid, *ptr_eh, channel))
         , library(fs_library)
         , log(fs_admin / "log.json")
         , pending_for_storage()
@@ -334,7 +334,7 @@ admin_server::admin_server(ip_address const& bind_to_address,
                            filesystem::path const& fs_admin,
                            meshpp::private_key const& pv_key,
                            ilog* plogger,
-                           direct_channel& channel)
+                           beltpp::direct_channel& channel)
     : m_pimpl(new detail::admin_server_internals(bind_to_address,
                                                  fs_library,
                                                  fs_admin,
