@@ -54,6 +54,7 @@ target_link_libraries(cloudyserver
         belt.pp
     PRIVATE
         cryptoutility
+        systemutility
         packet
         socket
         processor
