@@ -99,6 +99,11 @@ uint64_t storage::put_file(StorageModel::StorageFile&& file, string& uri)
 
     uri = meshpp::hash(file_contents);
 
+    beltpp::on_failure guard([this]
+    {
+        m_pimpl->map.discard();
+    });
+
     if (m_pimpl->map.contains(uri))
     {
         auto& duplicate_count = m_pimpl->map.at(uri).duplicate_count;
@@ -119,19 +124,15 @@ uint64_t storage::put_file(StorageModel::StorageFile&& file, string& uri)
         file.data = ":PATH_URI:";
         file.duplicate_count = 1;
 
-        beltpp::on_failure guard([this]
-        {
-            m_pimpl->map.discard();
-        });
-
         if (false == m_pimpl->map.insert(uri, file))
             throw std::logic_error("storage::put_file: false == m_pimpl->map.insert(uri, file)");
 
-        m_pimpl->map.save();
-
-        guard.dismiss();
-        m_pimpl->map.commit();
     }
+
+    m_pimpl->map.save();
+
+    guard.dismiss();
+    m_pimpl->map.commit();
 
     return result;
 }
@@ -197,7 +198,7 @@ uint64_t storage::remove(string const& uri)
     guard.dismiss();
     m_pimpl->map.commit();
 
-    return true;
+    return result;
 }
 
 unordered_set<string> storage::get_file_uris() const

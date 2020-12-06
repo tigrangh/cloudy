@@ -169,7 +169,7 @@ public:
             }
             pending_for_storage.push_back(std::move(pending_data));
         }
-        else
+        else if (data.empty())
         {
             if (pending_data.count != 0)
                 throw std::logic_error("process_storage: pending_data.count != 0");
@@ -518,7 +518,7 @@ void admin_server::run(bool& stop_check)
                 LibraryDelete request;
                 std::move(received_packet).get(request);
 
-                unordered_set<string> uris;
+                vector<string> uris;
 
                 if (false == request.path.empty())
                 {

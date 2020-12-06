@@ -240,9 +240,9 @@ void library::add(ProcessMediaCheckResult&& progress_item,
             progress_item.path.pop_back();
     }
 }
-unordered_set<string> library::delete_library(vector<string> const& path)
+vector<string> library::delete_library(vector<string> const& path)
 {
-    unordered_set<string> uris;
+    vector<string> uris;
     string path_string = join_path(path).first;
 
     if (m_pimpl->library_tree.contains(path_string))
@@ -253,7 +253,7 @@ unordered_set<string> library::delete_library(vector<string> const& path)
         {
             auto uris_local = delete_index(*item.checksum, path);
             for (auto const& uri : uris_local)
-                uris.insert(uri);
+                uris.push_back(uri);
         }
     }
 
@@ -552,6 +552,7 @@ library::process_check_done(ProcessMediaCheckResult&& progress_item,
 
     auto it_item = items.begin();
     //for (; it_item != items.end(); ++it_item)
+    if (it_item != items.end())
     {
         InternalModel::ProcessMediaCheckRequest& item = *it_item;
 
@@ -602,10 +603,10 @@ AdminModel::IndexListResponse library::list_index(std::string const& sha256sum) 
     return result;
 }
 
-unordered_set<string> library::delete_index(string const& sha256sum_,
-                                            vector<string> const& only_path)
+vector<string> library::delete_index(string const& sha256sum_,
+                                     vector<string> const& only_path)
 {
-    unordered_set<string> uris;
+    vector<string> uris;
     auto sha256sum = sha256sum_;
 
     if (m_pimpl->library_index.contains(sha256sum))
@@ -623,7 +624,7 @@ unordered_set<string> library::delete_index(string const& sha256sum_,
 
             string child;
 
-            while (false == index_item_path.empty())
+            while (true)
             {
                 string item_path_string = join_path(index_item_path).first;
 
@@ -657,6 +658,10 @@ unordered_set<string> library::delete_index(string const& sha256sum_,
                     if (!item.names)
                     {
                         m_pimpl->library_tree.erase(item_path_string);
+
+                        if (index_item_path.empty())
+                            break;
+
                         child = index_item_path.back();
                         index_item_path.pop_back();
                     }
@@ -673,7 +678,7 @@ unordered_set<string> library::delete_index(string const& sha256sum_,
             for (auto& type_definition : index_item.type_definitions)
             {
                 for (auto& frame : type_definition.sequence.frames)
-                    uris.insert(frame.uri);
+                    uris.push_back(frame.uri);
             }
 
             m_pimpl->library_index.erase(sha256sum);

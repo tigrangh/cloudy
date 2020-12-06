@@ -12,7 +12,7 @@
 #include <mesh.pp/fileutility.hpp>
 #include <mesh.pp/cryptoutility.hpp>
 
-#include <boost/filesystem/path.hpp>
+#include <boost/filesystem.hpp>
 
 #include <string>
 #include <memory>
@@ -150,13 +150,24 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
                     else if (transcoder_progress.count(option_index))
                     {
                         auto& transcoder_progress_item = transcoder_progress[option_index];
-                        transcoder_progress_item.path = request.path;
-                        transcoder_progress_item.accumulated = progress_item.second;
 
-                        progress_item.second += transcoder_progress_item.count;
+                        if (transcoder_progress_item.count == 0)
+                        {   //  happens when processing image instead of video
+                            filesystem::path path(transcoder_progress_item.data_or_file);
+                            boost::system::error_code ec;
+                            if (false == filesystem::remove(path, ec) || ec)
+                                throw std::logic_error("processor_worker: filesystem::remove(path, ec)");
+                        }
+                        else
+                        {
+                            transcoder_progress_item.path = request.path;
+                            transcoder_progress_item.accumulated = progress_item.second;
 
-                        stream.send(packet(std::move(transcoder_progress_item)));
-                        no_progress = false;
+                            progress_item.second += transcoder_progress_item.count;
+
+                            stream.send(packet(std::move(transcoder_progress_item)));
+                            no_progress = false;
+                        }
                     }
 
                     ++option_index;

@@ -51,7 +51,7 @@ public:
     void add(InternalModel::ProcessMediaCheckResult&& progress_item,
              std::string const& uri,
              std::string const& sha256sum);
-    std::unordered_set<std::string> delete_library(std::vector<std::string> const& path);
+    std::vector<std::string> delete_library(std::vector<std::string> const& path);
 
     bool index(std::vector<std::string>&& path, std::unordered_set<std::string>&& type_descriptions);
     std::vector<std::pair<std::vector<std::string>, std::unordered_set<std::string>>> process_index();
@@ -74,8 +74,8 @@ public:
                        std::string const& uri);
 
     AdminModel::IndexListResponse list_index(std::string const& sha256sum) const;
-    std::unordered_set<std::string> delete_index(std::string const& sha256sum,
-                                                 std::vector<std::string> const& only_path = std::vector<std::string>());
+    std::vector<std::string> delete_index(std::string const& sha256sum,
+                                          std::vector<std::string> const& only_path = std::vector<std::string>());
 private:
     std::unique_ptr<detail::library_internal> m_pimpl;
 };
