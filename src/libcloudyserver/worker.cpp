@@ -151,12 +151,36 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
                     {
                         auto& transcoder_progress_item = transcoder_progress[option_index];
 
+                        bool empty_transcoder_progress = false;
+
                         if (transcoder_progress_item.count == 0)
                         {   //  happens when processing image instead of video
+                            empty_transcoder_progress = true;
+                        }
+                        else
+                        {
                             filesystem::path path(transcoder_progress_item.data_or_file);
-                            boost::system::error_code ec;
-                            if (false == filesystem::remove(path, ec) || ec)
-                                throw std::logic_error("processor_worker: filesystem::remove(path, ec)");
+                            filesystem::fstream fl;
+                            fl.open(path, std::ios_base::binary |
+                                          std::ios_base::out |
+                                          std::ios_base::in);
+
+                            if (!fl)
+                                empty_transcoder_progress = true;
+                            else
+                            {
+                                fl.seekg(0, std::ios_base::end);
+                                size_t size_when_opened = size_t(fl.tellg());
+
+                                if (0 == size_when_opened)
+                                    empty_transcoder_progress = true;
+                            }
+                        }
+                        
+                        if (empty_transcoder_progress)
+                        {
+                            filesystem::path path(transcoder_progress_item.data_or_file);
+                            filesystem::remove(path);
                         }
                         else
                         {

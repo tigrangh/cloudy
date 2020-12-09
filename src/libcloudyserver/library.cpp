@@ -307,8 +307,8 @@ bool library::index(vector<string>&& path,
         AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
         video_transcode.filter.set(std::move(video_filter));
         video_transcode.codec = "libx264";
-        video_transcode.codec_priv_key = "x264-params";
-        video_transcode.codec_priv_value = "keyint=60:min-keyint=60:scenecut=0:force-cfr=1";
+        video_transcode.codec_priv_key = "";
+        video_transcode.codec_priv_value = "";
 
         AdminModel::MediaTypeDescriptionAVStream video;
         video.transcode.set(std::move(video_transcode));
@@ -335,8 +335,8 @@ bool library::index(vector<string>&& path,
         AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
         video_transcode.filter.set(std::move(video_filter));
         video_transcode.codec = "libx264";
-        video_transcode.codec_priv_key = "x264-params";
-        video_transcode.codec_priv_value = "keyint=60:min-keyint=60:scenecut=0:force-cfr=1";
+        video_transcode.codec_priv_key = "";
+        video_transcode.codec_priv_value = "";
 
         AdminModel::MediaTypeDescriptionAVStream video;
         video.transcode.set(std::move(video_transcode));
@@ -363,8 +363,8 @@ bool library::index(vector<string>&& path,
         AdminModel::MediaTypeDescriptionAVStreamTranscode video_transcode;
         video_transcode.filter.set(std::move(video_filter));
         video_transcode.codec = "libx264";
-        video_transcode.codec_priv_key = "x264-params";
-        video_transcode.codec_priv_value = "keyint=60:min-keyint=60:scenecut=0:force-cfr=1";
+        video_transcode.codec_priv_key = "";
+        video_transcode.codec_priv_value = "";
 
         AdminModel::MediaTypeDescriptionAVStream video;
         video.transcode.set(std::move(video_transcode));

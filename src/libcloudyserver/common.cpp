@@ -832,7 +832,7 @@ std::string dashboard()
             }
         };
 
-        var check_options = {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}};
+        var check_options = {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}};
 
         check_options.video.transcode.filter.fps = parseInt(document.getElementById("transcode_fps").value, 10);
         check_options.video.transcode.filter.width = parseInt(document.getElementById("transcode_width").value, 10);

@@ -616,11 +616,29 @@
             }
         };
 
-        var check_options = {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"x264-params", "codec_priv_value":"keyint=60:min-keyint=60:scenecut=0:force-cfr=1", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}};
+        ///*
+        var check_options = {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}};
+        
+        // ogv - libtheora video, libvorbis audio
+        //var check_options = {"rtt":24, "container_extension":"webm", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"libvorbis", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libvpx", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}};
+
+        // mp4-h264 video only
+        //var check_options = {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}};
+        // xvid
+        //var check_options = {"rtt":24, "container_extension":"avi", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libxvid", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}};
 
         check_options.video.transcode.filter.fps = parseInt(document.getElementById("transcode_fps").value, 10);
         check_options.video.transcode.filter.width = parseInt(document.getElementById("transcode_width").value, 10);
         check_options.video.transcode.filter.height = parseInt(document.getElementById("transcode_height").value, 10);
+        //*/       
+
+        // just remux
+        //var check_options = {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25}, "video":{"rtt":25}};
+        // aac audio only
+        //var check_options = {"rtt":24, "container_extension":"aac", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}};
+
+        //var check_options = {"rtt":24, "container_extension":"oga", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"libvorbis", "codec_priv_key":"", "codec_priv_value":""}}};
+        
         
         transcode_request.open("PUT", Singleton.Dashboard().requestInfo.admin + "/library/" + Singleton.Dashboard().requestInfo.currentdir.join("/") + "/" + Singleton.Dashboard().filetocheck, true);
         transcode_request.send(JSON.stringify([check_options]));
