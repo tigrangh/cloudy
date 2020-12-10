@@ -66,7 +66,7 @@ public:
     void process_index_done(std::vector<std::string> const& path,
                             std::unordered_set<std::string> const& type_descriptions);
 
-    bool check(std::vector<std::string>&& path, std::unordered_set<std::string>&& type_descriptions);
+    bool check(std::vector<std::string>&& path, std::unordered_set<std::string> const& type_descriptions);
     std::vector<InternalModel::ProcessMediaCheckRequest> process_check();
 
     std::unordered_set<std::string>

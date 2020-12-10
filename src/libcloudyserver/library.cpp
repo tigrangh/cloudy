@@ -431,19 +431,21 @@ unordered_set<string> library::process_index_store_hash(vector<string> const& pa
     auto type_descriptions_temp = type_descriptions;
 
     auto& items = m_pimpl->pending_for_index->items;
-    size_t count = 0;
-    for (auto& item : items)
+    for (size_t index = 0;
+         index != m_pimpl->processing_for_index &&
+         index != items.size();
+         ++index)
     {
+        auto& item = items[index];
+
         if (item.path == path &&
-            item.type_descriptions == type_descriptions &&
-            count < m_pimpl->processing_for_index)
+            item.type_descriptions == type_descriptions)
             item.sha256sum = sha256sum;
         else if (item.sha256sum == sha256sum)
         {
             for (auto const& type : item.type_descriptions)
                 type_descriptions_temp.erase(type);
         }
-        ++count;
     }
 
     return type_descriptions_temp;
@@ -464,13 +466,15 @@ void library::process_index_update(vector<string> const& path,
                                    unordered_set<string> const& type_descriptions_find,
                                    unordered_set<string> const& type_descriptions_replace)
 {
-    size_t count = 0;
     auto& items = m_pimpl->pending_for_index->items;
-    for (auto& item : items)
+    for (size_t index = 0;
+         index != m_pimpl->processing_for_index &&
+         index != items.size();
+         ++index)
     {
+        auto& item = items[index];
         if (item.path == path &&
-            item.type_descriptions == type_descriptions_find &&
-            count < m_pimpl->processing_for_index)
+            item.type_descriptions == type_descriptions_find)
         {
             item.type_descriptions = type_descriptions_replace;
             return;
@@ -500,7 +504,7 @@ void library::process_index_done(vector<string> const& path,
     throw std::logic_error("library::process_index_done");
 }
 
-bool library::check(vector<string>&& path, unordered_set<string>&& type_descriptions)
+bool library::check(vector<string>&& path, unordered_set<string> const& type_descriptions)
 {
     auto type_descriptions_temp = type_descriptions;
 

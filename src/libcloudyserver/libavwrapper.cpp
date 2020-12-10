@@ -1362,6 +1362,9 @@ unordered_map<size_t, InternalModel::ProcessMediaCheckResult> transcoder::loop()
     DataUnit data_unit;
     data_unit.more_read_packet = true;
 
+    // may want to check if there are encoder_context.definitions
+    // at all. and skip the whole decoding if there aren't any encoders
+
     while (true)
     {   //  for now this will not actually do chunk by chunk encoding
         if (false == pimpl->decoder.next(pimpl->encoders, data_unit))

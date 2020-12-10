@@ -111,6 +111,8 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
             libavwrapper::transcoder transcoder;
             transcoder.input_file = check_path(request.path).first;
             transcoder.output_dir = request.output_dir;
+            
+            // only video related full_progress elements are moved really
             transcoder.init(std::move(full_progress));
 
             while (true)

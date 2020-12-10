@@ -63,6 +63,7 @@ module InternalModel
         UInt64 count
         Array String path
         Extension type_description // MediaTypeDescriptionVideoContainer
+        //Extension type_description_refined // MediaTypeDescriptionVideoContainer
         String data_or_file
         ResultType result_type
     }

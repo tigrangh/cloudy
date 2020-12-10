@@ -634,6 +634,9 @@ void admin_server::run(bool& stop_check)
             {
                 m_pimpl->writeln_node(join_path(request.path).first + ": with hash " +
                                       request.sha256sum + " is already indexed");
+
+                // with below call, if the path does not yet exist in the library
+                // we will add the path to library and bind to existing index
                 InternalModel::ProcessMediaCheckResult dummy_progress_item;
                 dummy_progress_item.path = request.path;
                 m_pimpl->library.add(std::move(dummy_progress_item),
@@ -671,7 +674,6 @@ void admin_server::run(bool& stop_check)
                 }
                 else if (existing_info.empty())
                     can_continue_with_check = true;
-
                 
                 if (type_descriptions_temp.empty())
                 {
@@ -709,7 +711,7 @@ void admin_server::run(bool& stop_check)
                                                           type_descriptions_temp);
                     request.type_descriptions = std::move(type_descriptions_temp);
 
-                    if (false == m_pimpl->library.check(std::move(request.path), std::move(request.type_descriptions)))
+                    if (false == m_pimpl->library.check(std::move(request.path), request.type_descriptions))
                     {
                         m_pimpl->writeln_node("\tis already scheduled");
 
