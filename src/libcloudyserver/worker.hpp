@@ -1,6 +1,7 @@
 #pragma once
 
 #include "global.hpp"
+#include "internal_model.hpp"
 
 #include <belt.pp/ilog.hpp>
 #include <belt.pp/direct_stream.hpp>
@@ -8,6 +9,7 @@
 #include <boost/filesystem/path.hpp>
 
 #include <memory>
+#include <string>
 
 namespace cloudy
 {
@@ -15,6 +17,14 @@ namespace detail
 {
     class worker_internals;
 }
+
+class work_unit
+{
+public:
+    uint64_t duration = 0;
+    std::string data_or_file;
+    InternalModel::ResultType result_type;
+};
 
 class CLOUDYSERVERSHARED_EXPORT worker
 {

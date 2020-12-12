@@ -14,7 +14,7 @@ add_custom_command (
 add_custom_command (
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/internal_model.gen.hpp
   MAIN_DEPENDENCY internal_model.idl
-  COMMAND idl ${CMAKE_CURRENT_SOURCE_DIR}/internal_model.idl ${CMAKE_CURRENT_SOURCE_DIR}/internal_model.gen
+  COMMAND idl ${CMAKE_CURRENT_SOURCE_DIR}/internal_model.idl ${CMAKE_CURRENT_SOURCE_DIR}/internal_model.gen nosplitting noexporting "boost::optional"
 )
 
 add_definitions(-DCLOUDYSERVER_LIBRARY)

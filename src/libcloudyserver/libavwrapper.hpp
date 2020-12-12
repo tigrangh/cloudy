@@ -1,5 +1,7 @@
 #pragma once
 #include "global.hpp"
+#include "admin_model.hpp"
+#include "worker.hpp"
 
 #include <belt.pp/packet.hpp>
 
@@ -27,7 +29,7 @@ private:
     e_state state = before_init;
     std::unique_ptr<transcoder_detail> pimpl;
 
-    std::unordered_map<size_t, InternalModel::ProcessMediaCheckResult> loop();
+    std::unordered_map<size_t, cloudy::work_unit> loop();
     bool clean();
 public:
     transcoder();
@@ -35,7 +37,7 @@ public:
     boost::filesystem::path input_file;
     boost::filesystem::path output_dir;
 
-    bool init(std::vector<std::pair<beltpp::packet, size_t>>&& options);
-    std::unordered_map<size_t, InternalModel::ProcessMediaCheckResult> run();
+    bool init(std::vector<std::pair<AdminModel::MediaTypeDescriptionVariant, size_t>>& options);
+    std::unordered_map<size_t, cloudy::work_unit> run();
 };
 }

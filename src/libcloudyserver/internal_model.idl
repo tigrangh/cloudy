@@ -13,7 +13,7 @@ module InternalModel
     {
         String sha256sum
         Array String path
-        Set String type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
     }
     class PendingForIndex
     {
@@ -30,8 +30,7 @@ module InternalModel
         Array String path
         String output_dir
 
-        // value can be MediaTypeDescriptionVideoContainer serialized
-        Set String type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
     }
 
     ///
@@ -40,20 +39,20 @@ module InternalModel
     class ProcessIndexRequest
     {
         Array String path
-        Set String type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
     }
 
     class ProcessIndexResult
     {
         Array String path
         String sha256sum
-        Set String type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
     }
 
     class ProcessIndexError
     {
         Array String path
-        Set String type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
         String reason
     }
 
@@ -62,7 +61,7 @@ module InternalModel
         UInt64 accumulated
         UInt64 count
         Array String path
-        Extension type_description // MediaTypeDescriptionVideoContainer
+        Optional Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_description // MediaTypeDescriptionVideoContainer
         //Extension type_description_refined // MediaTypeDescriptionVideoContainer
         String data_or_file
         ResultType result_type

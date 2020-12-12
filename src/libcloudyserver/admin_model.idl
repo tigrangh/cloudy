@@ -29,7 +29,7 @@ module AdminModel
     class LibraryPut
     {
         Array String path
-        Array Object type_descriptions // MediaTypeDescriptionVideoContainer, MediaTypeDescriptionRaw
+        Array Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
     }
 
     class LibraryDelete
@@ -68,7 +68,7 @@ module AdminModel
 
     class Log
     {
-        Array Object log
+        Array Variant AdminModel {CheckMediaResult CheckMediaError CheckMediaWarning} log
     }
 
     class CheckMediaResult
@@ -120,7 +120,7 @@ module AdminModel
 
     class MediaTypeDefinition
     {
-        Object type_description // MediaTypeDescriptionVideoContainer, MediaTypeDescriptionRaw
+        Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_description
         MediaSequence sequence
     }
 

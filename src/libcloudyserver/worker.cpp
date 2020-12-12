@@ -14,7 +14,6 @@
 
 #include <boost/filesystem.hpp>
 
-#include <string>
 #include <memory>
 #include <chrono>
 #include <unordered_set>
@@ -96,15 +95,15 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
         {
             std::move(package).get(request);
 
-            vector<pair<packet, size_t>> full_progress;
-            full_progress.resize(request.type_descriptions.size());
+            vector<pair<AdminModel::MediaTypeDescriptionVariant, size_t>> all_options;
+            all_options.resize(request.type_descriptions.size());
 
             size_t index = 0;
-            for (auto const& type_description_str : request.type_descriptions)
+            for (auto type_description : request.type_descriptions)
             {
-                auto& progress_item = full_progress[index];
-                AdminModel::detail::loader(progress_item.first, type_description_str, nullptr);
-                progress_item.second = 0;
+                auto& option_item = all_options[index];
+                option_item.first = std::move(type_description);
+                option_item.second = 0;
                 ++index;
             }
 
@@ -113,99 +112,111 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
             transcoder.output_dir = request.output_dir;
             
             // only video related full_progress elements are moved really
-            transcoder.init(std::move(full_progress));
+            transcoder.init(all_options);
+            bool raw_done = false;
 
             while (true)
             {
-                auto transcoder_progress = transcoder.run();
+                auto progress = transcoder.run();
 
-                bool no_progress = true;
-
-                size_t option_index = 0;
-                for (auto& progress_item : full_progress)
+                if (false == raw_done)
                 {
-                    if (progress_item.first.type() == AdminModel::MediaTypeDescriptionRaw::rtt)
+                    raw_done = true;
+                    for (size_t option_index = 0; option_index != all_options.size(); ++option_index)
                     {
-                        InternalModel::ProcessMediaCheckResult raw_progress_item;
+                        auto& option_item = all_options[option_index];
 
-                        auto src_location = join_path(request.path).first;
-                        filesystem::path copy_location = request.output_dir;
-                        copy_location /= std::to_string(option_index);
-                        boost::system::error_code ec;
-                        filesystem::copy(src_location,
-                                         copy_location,
-                                         ec);
-                        if (ec)
-                            throw std::runtime_error("processor_worker: filesystem::copy(" +
-                                                     src_location + ", " +
-                                                     copy_location.string() + ")");
+                        if (option_item.first->type() == AdminModel::MediaTypeDescriptionRaw::rtt)
+                        {
+                            auto& progress_item = progress[option_index];
+                            InternalModel::ProcessMediaCheckResult raw_progress_item;
 
-                        raw_progress_item.count = 1;
-                        raw_progress_item.path = request.path;
-                        raw_progress_item.type_description = std::move(progress_item.first);
-                        raw_progress_item.result_type = InternalModel::ResultType::file;
-                        raw_progress_item.data_or_file = copy_location.string();
+                            auto src_location = join_path(request.path).first;
+                            filesystem::path copy_location = request.output_dir;
+                            copy_location /= std::to_string(option_index);
+                            boost::system::error_code ec;
+                            filesystem::copy(src_location,
+                                             copy_location,
+                                             ec);
+                            if (ec)
+                                throw std::runtime_error("processor_worker: filesystem::copy(" +
+                                                         src_location + ", " +
+                                                         copy_location.string() + ")");
 
-                        stream.send(packet(std::move(raw_progress_item)));
-                        no_progress = false;
+                            progress_item.duration = 1;
+                            progress_item.data_or_file = copy_location.string();
+                            progress_item.result_type = InternalModel::ResultType::file;
+                        }
                     }
-                    else if (transcoder_progress.count(option_index))
+                }
+                
+                auto it = progress.begin();
+                while (it != progress.end())
+                {
+                    bool empty_transcoder_progress = false;
+
+                    if (it->second.duration == 0)
+                    {   //  happens when processing image instead of video
+                        empty_transcoder_progress = true;
+                    }
+                    else if (it->second.result_type == InternalModel::ResultType::file)
                     {
-                        auto& transcoder_progress_item = transcoder_progress[option_index];
+                        filesystem::path path(it->second.data_or_file);
+                        filesystem::fstream fl;
+                        fl.open(path, std::ios_base::binary |
+                                      std::ios_base::out |
+                                      std::ios_base::in);
 
-                        bool empty_transcoder_progress = false;
-
-                        if (transcoder_progress_item.count == 0)
-                        {   //  happens when processing image instead of video
+                        if (!fl)
                             empty_transcoder_progress = true;
-                        }
                         else
                         {
-                            filesystem::path path(transcoder_progress_item.data_or_file);
-                            filesystem::fstream fl;
-                            fl.open(path, std::ios_base::binary |
-                                          std::ios_base::out |
-                                          std::ios_base::in);
+                            fl.seekg(0, std::ios_base::end);
+                            size_t size_when_opened = size_t(fl.tellg());
 
-                            if (!fl)
+                            if (0 == size_when_opened)
                                 empty_transcoder_progress = true;
-                            else
-                            {
-                                fl.seekg(0, std::ios_base::end);
-                                size_t size_when_opened = size_t(fl.tellg());
-
-                                if (0 == size_when_opened)
-                                    empty_transcoder_progress = true;
-                            }
-                        }
-                        
-                        if (empty_transcoder_progress)
-                        {
-                            filesystem::path path(transcoder_progress_item.data_or_file);
-                            filesystem::remove(path);
-                        }
-                        else
-                        {
-                            transcoder_progress_item.path = request.path;
-                            transcoder_progress_item.accumulated = progress_item.second;
-
-                            progress_item.second += transcoder_progress_item.count;
-
-                            stream.send(packet(std::move(transcoder_progress_item)));
-                            no_progress = false;
                         }
                     }
+                    else if (it->second.data_or_file.empty())
+                        empty_transcoder_progress = true;
+                    
+                    if (empty_transcoder_progress)
+                    {
+                        filesystem::path path(it->second.data_or_file);
+                        filesystem::remove(path);
 
-                    ++option_index;
+                        it = progress.erase(it);
+                    }
+                    else
+                        ++it;
                 }
 
-                if (no_progress)
+                if (progress.empty())
                 {
                     InternalModel::ProcessMediaCheckResult response;
                     response.path = request.path;
 
                     stream.send(packet(std::move(response)));
                     break;
+                }
+                else
+                {
+                    for (auto& progress_item : progress)
+                    {
+                        InternalModel::ProcessMediaCheckResult response;
+
+                        response.path = request.path;
+                        response.result_type = progress_item.second.result_type;
+                        response.type_description = all_options[progress_item.first].first;
+                        response.accumulated = all_options[progress_item.first].second;
+                        response.count = progress_item.second.duration;
+                        response.data_or_file = progress_item.second.data_or_file;
+
+                        all_options[progress_item.first].second += response.count;
+
+                        stream.send(packet(std::move(response)));
+                    }
                 }
             }
         }

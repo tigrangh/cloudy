@@ -142,12 +142,14 @@ public:
             false == data.empty())
         {
             string str_mime_type;
-            if (pending_data.type_description.type() == AdminModel::MediaTypeDescriptionVideoContainer::rtt)
+            if (pending_data.type_description &&
+                (*pending_data.type_description)->type() == AdminModel::MediaTypeDescriptionVideoContainer::rtt)
                 str_mime_type = mime_type<AdminModel::MediaTypeDescriptionVideoContainer>();
-            else if (pending_data.type_description.type() == AdminModel::MediaTypeDescriptionRaw::rtt)
+            else if (pending_data.type_description &&
+                     (*pending_data.type_description)->type() == AdminModel::MediaTypeDescriptionRaw::rtt)
             {
                 AdminModel::MediaTypeDescriptionRaw const* pdesc;
-                pending_data.type_description.get(pdesc);
+                (*pending_data.type_description)->get(pdesc);
                 str_mime_type = pdesc->mime_type;
             }
 
@@ -233,7 +235,7 @@ public:
             AdminModel::IndexListResponse index_list = library.list_index(sha256sum);
             for (auto const& existing : index_list.list_index[sha256sum].type_definitions)
             {
-                if (type_descriptions.count(existing.type_description.to_string()))
+                if (type_descriptions.count(existing.type_description))
                     detected = true;
             }
 
@@ -487,9 +489,9 @@ void admin_server::run(bool& stop_check)
                     auto path_copy = request.path;
                     auto str_path = join_path(request.path).first;
 
-                    unordered_set<string> type_descriptions;
+                    unordered_set<AdminModel::MediaTypeDescriptionVariant> type_descriptions;
                     for (auto const& type_description : request.type_descriptions)
-                        type_descriptions.insert(type_description.to_string());
+                        type_descriptions.insert(type_description);
 
                     if (m_pimpl->library.index(std::move(path_copy), std::move(type_descriptions)))
                         m_pimpl->writeln_node(str_path + " scheduling for index");
@@ -628,7 +630,7 @@ void admin_server::run(bool& stop_check)
             auto type_descriptions_temp = request.type_descriptions;
             for (auto const& existing :
                  index_list.list_index[request.sha256sum].type_definitions)
-                type_descriptions_temp.erase(existing.type_description.to_string());
+                type_descriptions_temp.erase(existing.type_description);
 
             if (type_descriptions_temp.empty())
             {
@@ -739,7 +741,7 @@ void admin_server::run(bool& stop_check)
             m_pimpl->library.process_index_done(request.path, request.type_descriptions);
 
             m_pimpl->writeln_node(join_path(request.path).first + ": " + request.reason);
-            m_pimpl->log->log.push_back(std::move(received_packet));
+            m_pimpl->log->log.push_back(packet(std::move(log)));
             break;
         }
         case InternalModel::ProcessMediaCheckResult::rtt:

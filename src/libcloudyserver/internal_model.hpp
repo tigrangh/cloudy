@@ -1,6 +1,8 @@
 #pragma once
 #include "global.hpp"
 
+#include "admin_model.hpp"
+
 //  for now workaround optional support like this
 //  later try to make it more or less as it should
 #include <boost/optional.hpp>
@@ -9,24 +11,24 @@
 
 namespace InternalModel
 {
-using boost::optional;
+//using boost::optional;
 }
 
 namespace InternalModel
 {
 namespace detail
 {
-template <typename T>
-inline
-bool analyze_json(optional<T>& value,
-                  ::beltpp::json::expression_tree* pexp,
-                  ::beltpp::message_loader_utility const& utl);
-template <typename T>
-inline
-std::string saver(optional<T> const& value);
-template <typename T>
-inline
-bool less(optional<T> const& first, optional<T> const& second);
+// template <typename T>
+// inline
+// bool analyze_json(optional<T>& value,
+//                   ::beltpp::json::expression_tree* pexp,
+//                   ::beltpp::message_loader_utility const& utl);
+// template <typename T>
+// inline
+// std::string saver(optional<T> const& value);
+// template <typename T>
+// inline
+// bool less(optional<T> const& first, optional<T> const& second);
 }
 }
 
@@ -37,42 +39,42 @@ namespace InternalModel
 namespace detail
 {
 
-template <typename T>
-inline
-bool analyze_json(optional<T>& value,
-                  ::beltpp::json::expression_tree* pexp,
-                  ::beltpp::message_loader_utility const& utl)
-{
-    value.reset();
-    bool code = true;
-    if (nullptr == pexp)
-        code = false;
-    else
-    {
-        T optional_value;
-        if (analyze_json(optional_value, pexp, utl))
-            value = std::move(optional_value);
-        else
-        {
-            code = false;
-        }
-    }
+// template <typename T>
+// inline
+// bool analyze_json(optional<T>& value,
+//                   ::beltpp::json::expression_tree* pexp,
+//                   ::beltpp::message_loader_utility const& utl)
+// {
+//     value.reset();
+//     bool code = true;
+//     if (nullptr == pexp)
+//         code = false;
+//     else
+//     {
+//         T optional_value;
+//         if (analyze_json(optional_value, pexp, utl))
+//             value = std::move(optional_value);
+//         else
+//         {
+//             code = false;
+//         }
+//     }
 
-    return code;
-}
-template <typename T>
-std::string saver(optional<T> const& value)
-{
-    if (value)
-        return saver(*value);
-    return std::string();
-}
-template <typename T>
-inline
-bool less(optional<T> const& first, optional<T> const& second)
-{
-    std::less<std::string> c;
-    return c(saver(first), saver(second));
-}
+//     return code;
+// }
+// template <typename T>
+// std::string saver(optional<T> const& value)
+// {
+//     if (value)
+//         return saver(*value);
+//     return std::string();
+// }
+// template <typename T>
+// inline
+// bool less(optional<T> const& first, optional<T> const& second)
+// {
+//     std::less<std::string> c;
+//     return c(saver(first), saver(second));
+// }
 }
 }

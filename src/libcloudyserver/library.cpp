@@ -1,7 +1,6 @@
 #include "library.hpp"
 #include "common.hpp"
 #include "internal_model.hpp"
-#include "admin_model.hpp"
 
 #include <mesh.pp/fileutility.hpp>
 #include <mesh.pp/cryptoutility.hpp>
@@ -16,6 +15,7 @@ using std::vector;
 using std::pair;
 using std::unordered_set;
 using std::unordered_map;
+using boost::optional;
 
 namespace cloudy
 {
@@ -189,14 +189,14 @@ void library::add(ProcessMediaCheckResult&& progress_item,
             if (0 == set_existing_paths.count(path_string))
                 index_item.paths.push_back(progress_item.path);
 
-            if (false == progress_item.type_description.empty())
+            if (progress_item.type_description)
             {
                 vector<AdminModel::MediaTypeDefinition>& type_definitions = index_item.type_definitions;
 
                 AdminModel::MediaTypeDefinition* media_type_definition = nullptr;
                 for (auto& item : type_definitions)
                 {
-                    if (item.type_description.to_string() == progress_item.type_description.to_string())
+                    if (item.type_description == progress_item.type_description)
                     {
                         media_type_definition = &item;
                         break;
@@ -204,9 +204,11 @@ void library::add(ProcessMediaCheckResult&& progress_item,
                 }
                 if (nullptr == media_type_definition)
                 {
-                    type_definitions.push_back(AdminModel::MediaTypeDefinition());
+                    AdminModel::MediaTypeDefinition temp_item;
+                    temp_item.type_description = std::move(*progress_item.type_description);
+
+                    type_definitions.push_back(std::move(temp_item));
                     media_type_definition = &type_definitions.back();
-                    media_type_definition->type_description = std::move(progress_item.type_description);
                 }
 
                 uint64_t accumulated = 0;
@@ -261,7 +263,7 @@ vector<string> library::delete_library(vector<string> const& path)
 }
 
 bool library::index(vector<string>&& path,
-                    std::unordered_set<std::string>&& type_descriptions)
+                    std::unordered_set<AdminModel::MediaTypeDescriptionVariant>&& type_descriptions)
 {
     string path_string = join_path(path).first;
 
@@ -402,9 +404,9 @@ bool library::index(vector<string>&& path,
     return true;
 }
 
-vector<pair<vector<string>, unordered_set<string>>> library::process_index()
+vector<pair<vector<string>, unordered_set<AdminModel::MediaTypeDescriptionVariant>>> library::process_index()
 {
-    vector<pair<vector<string>, unordered_set<string>>> result;
+    vector<pair<vector<string>, unordered_set<AdminModel::MediaTypeDescriptionVariant>>> result;
 
     auto const& pending_items = m_pimpl->pending_for_index.as_const()->items;
     for (size_t index = 0; index != pending_items.size(); ++index)
@@ -424,9 +426,9 @@ vector<pair<vector<string>, unordered_set<string>>> library::process_index()
     return result;
 }
 
-unordered_set<string> library::process_index_store_hash(vector<string> const& path,
-                                                        unordered_set<string> const& type_descriptions,
-                                                        string const& sha256sum)
+unordered_set<AdminModel::MediaTypeDescriptionVariant> library::process_index_store_hash(vector<string> const& path,
+                                                                                         unordered_set<AdminModel::MediaTypeDescriptionVariant> const& type_descriptions,
+                                                                                         string const& sha256sum)
 {
     auto type_descriptions_temp = type_descriptions;
 
@@ -463,8 +465,8 @@ string library::process_index_retrieve_hash(vector<string> const& path) const
 }
 
 void library::process_index_update(vector<string> const& path,
-                                   unordered_set<string> const& type_descriptions_find,
-                                   unordered_set<string> const& type_descriptions_replace)
+                                   unordered_set<AdminModel::MediaTypeDescriptionVariant> const& type_descriptions_find,
+                                   unordered_set<AdminModel::MediaTypeDescriptionVariant> const& type_descriptions_replace)
 {
     auto& items = m_pimpl->pending_for_index->items;
     for (size_t index = 0;
@@ -485,7 +487,7 @@ void library::process_index_update(vector<string> const& path,
 }
 
 void library::process_index_done(vector<string> const& path,
-                                 unordered_set<string> const& type_descriptions)
+                                 unordered_set<AdminModel::MediaTypeDescriptionVariant> const& type_descriptions)
 {
     --m_pimpl->processing_for_index;
 
@@ -504,7 +506,7 @@ void library::process_index_done(vector<string> const& path,
     throw std::logic_error("library::process_index_done");
 }
 
-bool library::check(vector<string>&& path, unordered_set<string> const& type_descriptions)
+bool library::check(vector<string>&& path, unordered_set<AdminModel::MediaTypeDescriptionVariant> const& type_descriptions)
 {
     auto type_descriptions_temp = type_descriptions;
 
@@ -546,7 +548,7 @@ vector<ProcessMediaCheckRequest> library::process_check()
     return result;
 }
 
-unordered_set<string>
+unordered_set<AdminModel::MediaTypeDescriptionVariant>
 library::process_check_done(ProcessMediaCheckResult&& progress_item,
                             string const& uri)
 {
@@ -576,7 +578,7 @@ library::process_check_done(ProcessMediaCheckResult&& progress_item,
 
                 add(std::move(progress_item), uri, sha256sum);
 
-                return unordered_set<string>();
+                return unordered_set<AdminModel::MediaTypeDescriptionVariant>();
             }
         }
     }
