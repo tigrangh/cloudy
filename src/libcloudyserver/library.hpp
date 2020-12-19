@@ -70,9 +70,12 @@ public:
     bool check(std::vector<std::string>&& path, std::unordered_set<AdminModel::MediaTypeDescriptionVariant> const& type_descriptions);
     std::vector<InternalModel::ProcessMediaCheckRequest> process_check();
 
+    void process_check_done_part(InternalModel::ProcessMediaCheckResult&& item,std::string const& uri);
+
     std::unordered_set<AdminModel::MediaTypeDescriptionVariant>
-    process_check_done(InternalModel::ProcessMediaCheckResult&& item,
-                       std::string const& uri);
+    process_check_get_pending(InternalModel::ProcessMediaCheckResult const& item);
+
+    void process_check_done(InternalModel::ProcessMediaCheckResult const& item, bool allow_throw);
 
     AdminModel::IndexListResponse list_index(std::string const& sha256sum) const;
     std::vector<std::string> delete_index(std::string const& sha256sum,

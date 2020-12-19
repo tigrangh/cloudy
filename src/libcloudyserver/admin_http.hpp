@@ -214,7 +214,6 @@ beltpp::detail::pmsg_all message_list_load(
             for (size_t index = 1; index != ss.resource.path.size(); ++index)
                 ref.path.push_back(ss.resource.path[index]);
 
-
             AdminModel::detail::loader(ref.type_descriptions, posted, nullptr);
 
             return ::beltpp::detail::pmsg_all(LibraryPut::rtt,

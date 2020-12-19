@@ -189,14 +189,18 @@ void library::add(ProcessMediaCheckResult&& progress_item,
             if (0 == set_existing_paths.count(path_string))
                 index_item.paths.push_back(progress_item.path);
 
-            if (progress_item.type_description)
+            auto pi_type_description = progress_item.type_description;
+            if (progress_item.type_description_refined)
+                pi_type_description = progress_item.type_description_refined;
+
+            if (pi_type_description)
             {
                 vector<AdminModel::MediaTypeDefinition>& type_definitions = index_item.type_definitions;
 
                 AdminModel::MediaTypeDefinition* media_type_definition = nullptr;
                 for (auto& item : type_definitions)
                 {
-                    if (item.type_description == progress_item.type_description)
+                    if (item.type_description == pi_type_description)
                     {
                         media_type_definition = &item;
                         break;
@@ -205,7 +209,8 @@ void library::add(ProcessMediaCheckResult&& progress_item,
                 if (nullptr == media_type_definition)
                 {
                     AdminModel::MediaTypeDefinition temp_item;
-                    temp_item.type_description = std::move(*progress_item.type_description);
+                    temp_item.sequence.done = false;
+                    temp_item.type_description = std::move(*pi_type_description);
 
                     type_definitions.push_back(std::move(temp_item));
                     media_type_definition = &type_definitions.back();
@@ -216,8 +221,12 @@ void library::add(ProcessMediaCheckResult&& progress_item,
                 if (false == frames.empty())
                     accumulated = frames.back().count;
 
-                if (accumulated < progress_item.accumulated)
-                    throw std::logic_error("library::add: accumulated < progress_item.request.accumulated");
+                if (media_type_definition->sequence.done)
+                    throw std::runtime_error("library::add: media_type_definition->sequence.done");
+                if (accumulated != progress_item.accumulated)
+                    throw std::runtime_error("library::add: accumulated != progress_item.request.accumulated");
+                if (0 == progress_item.count)
+                    throw std::runtime_error("library::add: 0 == progress_item.count");
 
                 AdminModel::MediaFrame frame;
                 frame.uri = uri;
@@ -274,6 +283,7 @@ bool library::index(vector<string>&& path,
     if (false)
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.adjust = false;
         video_filter.height = 720;
         video_filter.width = 1280;
         video_filter.fps = 15;
@@ -302,6 +312,7 @@ bool library::index(vector<string>&& path,
     }
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.adjust = false;
         video_filter.height = 1080;
         video_filter.width = 1920;
         video_filter.fps = 29;
@@ -330,6 +341,7 @@ bool library::index(vector<string>&& path,
     }
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.adjust = false;
         video_filter.height = 720;
         video_filter.width = 1280;
         video_filter.fps = 29;
@@ -358,6 +370,7 @@ bool library::index(vector<string>&& path,
     }
     {
         AdminModel::MediaTypeDescriptionVideoFilter video_filter;
+        video_filter.adjust = true;
         video_filter.height = 360;
         video_filter.width = 640;
         video_filter.fps = 29;
@@ -548,16 +561,66 @@ vector<ProcessMediaCheckRequest> library::process_check()
     return result;
 }
 
-unordered_set<AdminModel::MediaTypeDescriptionVariant>
-library::process_check_done(ProcessMediaCheckResult&& progress_item,
-                            string const& uri)
+void library::process_check_done_part(ProcessMediaCheckResult&& progress_item,
+                                      string const& uri)
 {
     string string_path = join_path(progress_item.path).first;
 
     auto& items = m_pimpl->pending_for_media_check->items;
 
     auto it_item = items.begin();
-    //for (; it_item != items.end(); ++it_item)
+    if (it_item != items.end())
+    {
+        InternalModel::ProcessMediaCheckRequest& item = *it_item;
+
+        if (item.path == progress_item.path)
+        {
+            if (progress_item.count)
+            {
+                string sha256sum = process_index_retrieve_hash(progress_item.path);
+
+                add(std::move(progress_item), uri, sha256sum);
+
+                return;
+            }
+        }
+    }
+
+    throw std::logic_error("library::process_check_done_part: pending item not found");
+}
+
+std::unordered_set<AdminModel::MediaTypeDescriptionVariant>
+library::process_check_get_pending(ProcessMediaCheckResult const& progress_item)
+{
+    string string_path = join_path(progress_item.path).first;
+
+    auto& items = m_pimpl->pending_for_media_check->items;
+
+    auto it_item = items.begin();
+    if (it_item != items.end())
+    {
+        InternalModel::ProcessMediaCheckRequest& item = *it_item;
+
+        if (item.path == progress_item.path)
+        {
+            //if (0 == progress_item.count)
+            {
+                return item.type_descriptions;
+            }
+        }
+    }
+
+    throw std::logic_error("library::process_check_get_pending: pending item not found");
+}
+
+void library::process_check_done(ProcessMediaCheckResult const& progress_item,
+                                 bool allow_throw)
+{
+    string string_path = join_path(progress_item.path).first;
+
+    auto& items = m_pimpl->pending_for_media_check->items;
+
+    auto it_item = items.begin();
     if (it_item != items.end())
     {
         InternalModel::ProcessMediaCheckRequest& item = *it_item;
@@ -566,19 +629,30 @@ library::process_check_done(ProcessMediaCheckResult&& progress_item,
         {
             if (0 == progress_item.count)
             {
-                auto result = std::move(item.type_descriptions);
                 items.erase(it_item);
                 m_pimpl->processing_for_check = false;
 
-                return result;
-            }
-            else
-            {
                 string sha256sum = process_index_retrieve_hash(progress_item.path);
 
-                add(std::move(progress_item), uri, sha256sum);
+                if (m_pimpl->library_index.contains(sha256sum))
+                {
+                    AdminModel::LibraryIndex& index_item = m_pimpl->library_index.at(sha256sum);
+                    size_t accumulated = 0;
+                    for (auto& definition_item : index_item.type_definitions)
+                    {
+                        if (false == definition_item.sequence.done)
+                        {
+                            definition_item.sequence.done = true;
+                            if (false == definition_item.sequence.frames.empty())
+                                accumulated += definition_item.sequence.frames.back().count;
+                        }
+                    }
 
-                return unordered_set<AdminModel::MediaTypeDescriptionVariant>();
+                    if (accumulated != progress_item.accumulated && allow_throw)
+                        throw std::runtime_error("library::process_check_done: accumulated != progress_item.accumulated && allow_throw");
+                }
+                
+                return;
             }
         }
     }

@@ -297,7 +297,7 @@ public:
         return true;
     }
 
-    void avcodec_context_init(AdminModel::MediaTypeDescriptionAVStreamTranscode const& options,
+    void avcodec_context_init(AdminModel::MediaTypeDescriptionAVStreamTranscode& options,
                               DecoderCodecContextDefinition const& decoder,
                               AVRational input_framerate,
                               bool& skip)
@@ -429,10 +429,40 @@ public:
                 }
                 else
                 {
+                    avcodec_context->height = decoder.avcodec_context->height;
+                    avcodec_context->width = decoder.avcodec_context->width;
+                    // skip = true;
+                    // return;
+                }
+                if (0 != avcodec_context->height % 2)
+                    --avcodec_context->height;
+                if (0 != avcodec_context->width % 2)
+                    --avcodec_context->width;
+
+                if (int(options.filter->fps) > input_framerate.num / input_framerate.den + 1)
+                {
+                    if (false == options.filter->adjust)
+                    {
+                        skip = true;
+                        return;
+                    }
+                    options.filter->fps = input_framerate.num / input_framerate.den +
+                                          (0 == input_framerate.num % input_framerate.den ? 0 : 1);
+                }
+                avcodec_context->framerate = {int(options.filter->fps), 1};
+
+                if (false == options.filter->adjust &&
+                    (
+                        int(options.filter->height) != avcodec_context->height ||
+                        int(options.filter->width) != avcodec_context->width
+                    ))
+                {
                     skip = true;
                     return;
                 }
-                avcodec_context->framerate = {int(options.filter->fps), 1};
+
+                options.filter->height = avcodec_context->height;
+                options.filter->width = avcodec_context->width;
             }
 
             avcodec_context->time_base = av_inv_q(avcodec_context->framerate);
@@ -917,8 +947,6 @@ public:
 class DecoderContext : public Context<DecoderCodecContextDefinition>
 {
 public:
-    //string filepath;
-
     bool load(string const& path);
     bool next(vector<EncoderContext>& encoder_contexts,
               DataUnit& data_unit);
@@ -1318,7 +1346,6 @@ bool EncoderContext::process(DecoderContext& decoder_context,
 class transcoder_detail
 {
 public:
-    vector<pair<AdminModel::MediaTypeDescriptionVariant, size_t>>* options = nullptr;
     DecoderContext decoder;
     vector<EncoderContext> encoders;
 };
@@ -1330,8 +1357,6 @@ transcoder::~transcoder() = default;
 
 bool transcoder::init(vector<pair<AdminModel::MediaTypeDescriptionVariant, size_t>>& options)
 {
-    pimpl->options = &options;
-
     if (false == pimpl->decoder.load(input_file.string()))
         return false;
 

@@ -63,7 +63,7 @@ This application is also embedded inside the server and can be accessed with the
 ### Add a file to media library
 Consider `/path/to/media/file.mp4` to be a local video file
 ```console
-user@pc:~$ curl -X PUT --data '[{"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "height":1080, "width":1920, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "height":720, "width":1280, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "height":360, "width":640, "fps":29}}}}]' "127.0.0.1:4444/library/path/to/media/file.mp4"
+user@pc:~$ curl -X PUT --data '[{"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "adjust":false, "height":1080, "width":1920, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "adjust":false, "height":720, "width":1280, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "adjust":true, "height":360, "width":640, "fps":29}}}}]' "127.0.0.1:4444/library/path/to/media/file.mp4"
 {"rtt":7,"lib_files":[],"lib_directories":[],"fs_files":["file.mp4"],"fs_directories":[]}
 ```
 The response shows already existing files and folders in the library and in the fs (in the current directory), in this case nothing yet in the library.
@@ -85,7 +85,7 @@ With this we get the checksum of the file - sha256 hash
 And then
 ```console
 user@pc:~$ curl "127.0.0.1:4444/index/GvN8WbnpBtXe6GzJPbQtmanD6gxg7Bt8XHibwU7x546m"
-{"rtt":22,"paths":[["path","to","media","file.mp4"]],"type_definitions":[{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"","codec_priv_value":"","filter":{"rtt":27,"height":360,"width":640,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54213,"uri":"ASCvRY6YCMsLAD2iPyMHPnnb9Lqjg1Zhq15o8JnxYSfM"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"","codec_priv_value":"","filter":{"rtt":27,"height":1080,"width":1920,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54213,"uri":"2abSXktkdeFWBTpJGFXvxT6x5nuPn1MAX9xKD2GPQqv9"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"","codec_priv_value":"","filter":{"rtt":27,"height":720,"width":1280,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54213,"uri":"C56jZnpinpaeS5KDGxtuBRRy3YxcbXx46eFpkgBC1XW4"}]}}]}
+{"rtt":22,"paths":[["path","to","media","file.mp4"]],"type_definitions":[{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"","codec_priv_value":"","filter":{"rtt":27,"adjust":true,"height":360,"width":640,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54213,"uri":"ASCvRY6YCMsLAD2iPyMHPnnb9Lqjg1Zhq15o8JnxYSfM"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"","codec_priv_value":"","filter":{"rtt":27,"adjust":false,"height":1080,"width":1920,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54213,"uri":"2abSXktkdeFWBTpJGFXvxT6x5nuPn1MAX9xKD2GPQqv9"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"","codec_priv_value":"","filter":{"rtt":27,"adjust":false,"height":720,"width":1280,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54213,"uri":"C56jZnpinpaeS5KDGxtuBRRy3YxcbXx46eFpkgBC1XW4"}]}}]}
 ```
 This shows that there are three transcoded versions of the original video file, details about the transcoding options and the "uri" of each transcoded file, which can be used to request the file from storage server. By the way, "count" shows the duration of the video in milliseconds.
 But just the uri is made to be not enough to get the file, we need to ask the admin interface to sign it, and get an authorization.
@@ -136,15 +136,14 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
     "IndexListGet": {
         "type": "object",
         "rtt": 0,
-        "properties": {
-        }
+        "properties": {}
     },
 
     "IndexListResponse": {
         "type": "object",
         "rtt": 1,
         "properties": {
-            "list_index": { "type": "Hash String LibraryIndex"},
+            "list_index": { "type": "Hash String LibraryIndex"}
         }
     },
 
@@ -152,7 +151,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 2,
         "properties": {
-            "sha256sum": { "type": "String"},
+            "sha256sum": { "type": "String"}
         }
     },
 
@@ -160,7 +159,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 3,
         "properties": {
-            "sha256sum": { "type": "String"},
+            "sha256sum": { "type": "String"}
         }
     },
 
@@ -168,7 +167,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 4,
         "properties": {
-            "path": { "type": "Array String"},
+            "path": { "type": "Array String"}
         }
     },
 
@@ -177,7 +176,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 5,
         "properties": {
             "path": { "type": "Array String"},
-            "type_descriptions": { "type": "Array Object"},
+            "type_descriptions": { "type": "Array Variant"}
         }
     },
 
@@ -185,7 +184,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 6,
         "properties": {
-            "path": { "type": "Array String"},
+            "path": { "type": "Array String"}
         }
     },
 
@@ -196,7 +195,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
             "lib_files": { "type": "Array FileItem"},
             "lib_directories": { "type": "Array DirectoryItem"},
             "fs_files": { "type": "Array FileItem"},
-            "fs_directories": { "type": "Array DirectoryItem"},
+            "fs_directories": { "type": "Array DirectoryItem"}
         }
     },
 
@@ -205,7 +204,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 8,
         "properties": {
             "name": { "type": "String"},
-            "checksum": { "type": "Optional String"},
+            "checksum": { "type": "Optional String"}
         }
     },
 
@@ -215,22 +214,21 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 9,
         "properties": {
-            "name": { "type": "String"},
+            "name": { "type": "String"}
         }
     },
 
     "LogGet": {
         "type": "object",
         "rtt": 10,
-        "properties": {
-        }
+        "properties": {}
     },
 
     "LogDelete": {
         "type": "object",
         "rtt": 11,
         "properties": {
-            "count": { "type": "UInt64"},
+            "count": { "type": "UInt64"}
         }
     },
 
@@ -238,7 +236,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 12,
         "properties": {
-            "log": { "type": "Array Object"},
+            "log": { "type": "Array Variant"}
         }
     },
 
@@ -246,7 +244,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 13,
         "properties": {
-            "path": { "type": "Array String"},
+            "path": { "type": "Array String"}
         }
     },
 
@@ -255,7 +253,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 14,
         "properties": {
             "path": { "type": "Array String"},
-            "reason": { "type": "String"},
+            "reason": { "type": "String"}
         }
     },
 
@@ -264,7 +262,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 15,
         "properties": {
             "path": { "type": "Array String"},
-            "reason": { "type": "String"},
+            "reason": { "type": "String"}
         }
     },
 
@@ -275,7 +273,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
             "file_uri": { "type": "String"},
             "session_id": { "type": "String"},
             "seconds": { "type": "UInt64"},
-            "time_point": { "type": "TimePoint"},
+            "time_point": { "type": "TimePoint"}
         }
     },
 
@@ -284,7 +282,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 17,
         "properties": {
             "token": { "type": "StorageAuthorization"},
-            "authorization": { "type": "Authority"},
+            "authorization": { "type": "Authority"}
         }
     },
 
@@ -293,7 +291,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 18,
         "properties": {
             "address": { "type": "String"},
-            "signature": { "type": "String"},
+            "signature": { "type": "String"}
         }
     },
 
@@ -303,7 +301,8 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 19,
         "properties": {
-            "frames": { "type": "Array MediaFrame"},
+            "done": { "type": "Bool"},
+            "frames": { "type": "Array MediaFrame"}
         }
     },
 
@@ -312,7 +311,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 20,
         "properties": {
             "count": { "type": "UInt64"},
-            "uri": { "type": "String"},
+            "uri": { "type": "String"}
         }
     },
 
@@ -320,8 +319,8 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 21,
         "properties": {
-            "type_description": { "type": "Object"},
-            "sequence": { "type": "MediaSequence"},
+            "type_description": { "type": "Variant"},
+            "sequence": { "type": "MediaSequence"}
         }
     },
 
@@ -330,7 +329,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 22,
         "properties": {
             "paths": { "type": "Array Array"},
-            "type_definitions": { "type": "Array MediaTypeDefinition"},
+            "type_definitions": { "type": "Array MediaTypeDefinition"}
         }
     },
 
@@ -338,7 +337,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 23,
         "properties": {
-            "message": { "type": "String"},
+            "message": { "type": "String"}
         }
     },
 
@@ -350,7 +349,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
             "video": { "type": "Optional MediaTypeDescriptionAVStream"},
             "muxer_opt_key": { "type": "String"},
             "muxer_opt_value": { "type": "String"},
-            "container_extension": { "type": "String"},
+            "container_extension": { "type": "String"}
         }
     },
 
@@ -358,7 +357,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 25,
         "properties": {
-            "transcode": { "type": "Optional MediaTypeDescriptionAVStreamTranscode"},
+            "transcode": { "type": "Optional MediaTypeDescriptionAVStreamTranscode"}
         }
     },
 
@@ -369,7 +368,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
             "codec": { "type": "String"},
             "codec_priv_key": { "type": "String"},
             "codec_priv_value": { "type": "String"},
-            "filter": { "type": "Optional MediaTypeDescriptionVideoFilter"},
+            "filter": { "type": "Optional MediaTypeDescriptionVideoFilter"}
         }
     },
 
@@ -377,9 +376,10 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 27,
         "properties": {
+            "adjust": { "type": "Bool"},
             "height": { "type": "UInt64"},
             "width": { "type": "UInt64"},
-            "fps": { "type": "UInt64"},
+            "fps": { "type": "UInt64"}
         }
     },
 
@@ -387,7 +387,7 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "type": "object",
         "rtt": 28,
         "properties": {
-            "mime_type": { "type": "String"},
+            "mime_type": { "type": "String"}
         }
     }
 

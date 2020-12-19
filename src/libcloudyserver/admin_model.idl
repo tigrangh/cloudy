@@ -110,6 +110,7 @@ module AdminModel
 
     class MediaSequence
     {
+        Bool done
         Array MediaFrame frames
     }
     class MediaFrame
@@ -160,6 +161,7 @@ module AdminModel
 
     class MediaTypeDescriptionVideoFilter
     {
+        Bool adjust
         UInt64 height
         UInt64 width
         UInt64 fps

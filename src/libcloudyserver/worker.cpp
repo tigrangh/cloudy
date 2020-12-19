@@ -91,11 +91,13 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
     case InternalModel::ProcessMediaCheckRequest::rtt:
     {
         InternalModel::ProcessMediaCheckRequest request;
+        vector<pair<AdminModel::MediaTypeDescriptionVariant, size_t>> all_options;
         try
         {
             std::move(package).get(request);
 
-            vector<pair<AdminModel::MediaTypeDescriptionVariant, size_t>> all_options;
+            vector<AdminModel::MediaTypeDescriptionVariant> unchanged_options;
+            unchanged_options.resize(request.type_descriptions.size());
             all_options.resize(request.type_descriptions.size());
 
             size_t index = 0;
@@ -104,6 +106,9 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
                 auto& option_item = all_options[index];
                 option_item.first = std::move(type_description);
                 option_item.second = 0;
+
+                unchanged_options[index] = option_item.first;
+
                 ++index;
             }
 
@@ -111,7 +116,6 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
             transcoder.input_file = check_path(request.path).first;
             transcoder.output_dir = request.output_dir;
             
-            // only video related full_progress elements are moved really
             transcoder.init(all_options);
             bool raw_done = false;
 
@@ -133,7 +137,7 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
 
                             auto src_location = join_path(request.path).first;
                             filesystem::path copy_location = request.output_dir;
-                            copy_location /= std::to_string(option_index);
+                            copy_location /= std::to_string(option_index);// + "_" + std::to_string(raw_done));
                             boost::system::error_code ec;
                             filesystem::copy(src_location,
                                              copy_location,
@@ -149,7 +153,7 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
                         }
                     }
                 }
-                
+
                 auto it = progress.begin();
                 while (it != progress.end())
                 {
@@ -196,6 +200,11 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
                 {
                     InternalModel::ProcessMediaCheckResult response;
                     response.path = request.path;
+                    response.count = 0;
+                    response.accumulated = 0;
+
+                    for (auto& option : all_options)
+                        response.accumulated += option.second;
 
                     stream.send(packet(std::move(response)));
                     break;
@@ -208,7 +217,8 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
 
                         response.path = request.path;
                         response.result_type = progress_item.second.result_type;
-                        response.type_description = all_options[progress_item.first].first;
+                        response.type_description = unchanged_options[progress_item.first];
+                        response.type_description_refined = all_options[progress_item.first].first;
                         response.accumulated = all_options[progress_item.first].second;
                         response.count = progress_item.second.duration;
                         response.data_or_file = progress_item.second.data_or_file;
@@ -224,6 +234,11 @@ void processor_worker(packet&& package, beltpp::libprocessor::async_result& stre
         {
             InternalModel::ProcessMediaCheckResult response;
             response.path = request.path;
+            response.count = 0;
+            response.accumulated = 0;
+
+            for (auto& option : all_options)
+                response.accumulated += option.second;
 
             stream.send(packet(std::move(response)));
         }

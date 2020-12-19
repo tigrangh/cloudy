@@ -188,7 +188,9 @@ public:
             }
 
             if (found)
+            {
                 pending_for_storage.push_back(std::move(pending_data));
+            }
             else
             {
                 process_check_done_wrapper(std::move(pending_data),
@@ -201,17 +203,21 @@ public:
     void process_storage_done(string const& uri,
                               string const& error_override)
     {
+        decltype(pending_for_storage) process_pending;
         do
         {
             auto&& progress_info = pending_for_storage.front();
-            process_check_done_wrapper(std::move(progress_info),
-                                       uri,
-                                       error_override);
+            process_pending.push_back(std::move(progress_info));
 
             pending_for_storage.erase(pending_for_storage.begin());
         }
         while (false == pending_for_storage.empty() &&
                pending_for_storage.front().count == 0);
+
+        for (auto&& progress_info : process_pending)
+            process_check_done_wrapper(std::move(progress_info),
+                                       uri,
+                                       error_override);
     }
 
     void process_check_done_wrapper(InternalModel::ProcessMediaCheckResult&& progress_info,
@@ -219,25 +225,28 @@ public:
                                     string const& error_override)
     {
         auto path = progress_info.path;
+        
+        auto type_descriptions = library.process_check_get_pending(progress_info);
 
-        auto type_descriptions =
-                library.process_check_done(std::move(progress_info),
-                                           uri);
-        bool final_progress_for_path = (false == type_descriptions.empty());
+        bool final_progress_for_path = (0 == progress_info.count);
 
         if (final_progress_for_path)
         {
+            library.process_check_done(progress_info, true);
+
             string sha256sum = library.process_index_retrieve_hash(path);
             if (sha256sum.empty())
                 throw std::logic_error("process_check_done_wrapper: sha256sum.empty()");
 
-            bool detected = false;
-            AdminModel::IndexListResponse index_list = library.list_index(sha256sum);
-            for (auto const& existing : index_list.list_index[sha256sum].type_definitions)
-            {
-                if (type_descriptions.count(existing.type_description))
-                    detected = true;
-            }
+            bool detected = (0 != progress_info.accumulated);
+            // AdminModel::IndexListResponse index_list = library.list_index(sha256sum);
+            // bool detected = (false == index_list.list_index[sha256sum].type_definitions.empty());
+            // bool detected = false;
+            // for (auto const& existing : index_list.list_index[sha256sum].type_definitions)
+            // {
+            //     if (type_descriptions.count(existing.type_description))
+            //         detected = true;
+            // }
 
             if (false == detected)
             {
@@ -259,20 +268,46 @@ public:
 
             library.process_index_done(path, type_descriptions);
         }
-        else if (uri.empty())
-        {
-            AdminModel::CheckMediaWarning problem;
-            problem.path = path;
-            problem.reason = "problem with storage";
-            if (false == error_override.empty())
-                problem.reason = error_override;
-
-            writeln_node(join_path(path).first + ": " + problem.reason);
-            log->log.push_back(packet(std::move(problem)));
-        }
         else
         {
-            writeln_node(join_path(path).first + ": added " + uri);
+            beltpp::on_failure guard([&path, &type_descriptions, &error_override, this]
+            {
+                InternalModel::ProcessMediaCheckResult progress_info;
+                progress_info.path = path;
+                progress_info.count = 0;
+                progress_info.accumulated = 0;
+                
+                library.process_check_done(progress_info, false);
+                library.process_index_done(path, type_descriptions);
+
+                AdminModel::CheckMediaError problem;
+                problem.path = path;
+                problem.reason = "exception while adding a frame";
+                if (false == error_override.empty())
+                    problem.reason = error_override;
+                writeln_node(join_path(path).first + ": " + problem.reason);
+                log->log.push_back(packet(std::move(problem)));
+            });
+
+            library.process_check_done_part(std::move(progress_info), uri);
+
+            guard.dismiss();
+
+            if (uri.empty())
+            {
+                AdminModel::CheckMediaWarning problem;
+                problem.path = path;
+                problem.reason = "problem with storage";
+                if (false == error_override.empty())
+                    problem.reason = error_override;
+
+                writeln_node(join_path(path).first + ": " + problem.reason);
+                log->log.push_back(packet(std::move(problem)));
+            }
+            else
+            {
+                writeln_node(join_path(path).first + ": added " + uri);
+            }
         }
     }
 };
@@ -763,15 +798,39 @@ void admin_server::run(bool& stop_check)
         {
         case StorageModel::StorageFileAddress::rtt:
         {
-            StorageModel::StorageFileAddress request;
-            received_packet.get(request);
+            try
+            {
+                StorageModel::StorageFileAddress request;
+                received_packet.get(request);
 
-            if (request.duplicate_count > 1)
-                m_pimpl->writeln_node("storage found a duplicate: " + request.uri);
-            else
-                m_pimpl->writeln_node("storage got new data: " + request.uri);
+                if (request.duplicate_count > 1)
+                    m_pimpl->writeln_node("storage found a duplicate: " + request.uri);
+                else
+                    m_pimpl->writeln_node("storage got new data: " + request.uri);
 
-            m_pimpl->process_storage_done(request.uri, string());
+                beltpp::on_failure guard([this, &request]
+                {
+                    StorageModel::StorageFileDelete file_delete;
+                    file_delete.uri = request.uri;
+
+                    m_pimpl->ptr_direct_stream->send(storage_peerid, packet(std::move(file_delete)));
+                });
+                m_pimpl->process_storage_done(request.uri, string());
+
+                guard.dismiss();
+            }
+            catch (std::logic_error const& ex)
+            {
+                throw;
+            }
+            catch (std::exception const& ex)
+            {
+                m_pimpl->writeln_node("library addition exception: " + std::string(ex.what()));
+            }
+            catch (...)
+            {
+                throw;
+            }
 
             break;
         }
