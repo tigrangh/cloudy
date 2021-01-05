@@ -795,7 +795,7 @@ std::string dashboard()
             }
         };
 
-        var check_options = {"rtt":28, "mime_type":"text/html"};
+        var check_options = {"rtt":29, "mime_type":"text/html"};
         check_options.mime_type = mime_type;
         
         addraw_request.open("PUT", Singleton.Dashboard().requestInfo.admin + "/library/" + Singleton.Dashboard().requestInfo.currentdir.join("/") + "/" + Singleton.Dashboard().filetocheck, true);
@@ -832,11 +832,36 @@ std::string dashboard()
             }
         };
 
-        var check_options = {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "adjust":true, "height":1080, "width":1920, "fps":29}}}};
+        ///*
+        var check_options = {"rtt":24, "container_extension":"mp4", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "filter":{"rtt":28, "volume":1}}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "parameters":{"preset":"fast"}, "filter":{"rtt":27, "adjust":true, "height":1080, "width":1920, "fps":29, "rotate":0}}}};
+        
+        // ogv - libtheora video, libvorbis audio
+        //var check_options = {"rtt":24, "container_extension":"webm", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"libvorbis", "filter":{"rtt":28, "volume":1}}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libvpx", "parameters":{"preset":"fast"}, "filter":{"rtt":27, "adjust":true, "height":1080, "width":1920, "fps":29, "rotate":0}}}};
+
+        // mp4-h264 video only
+        //var check_options = {"rtt":24, "container_extension":"mp4", "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "parameters":{"preset":"fast"}, "filter":{"rtt":27, "adjust":true, "height":1080, "width":1920, "fps":29, "rotate":0}}}};
+        // xvid
+        //var check_options = {"rtt":24, "container_extension":"avi", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "filter":{"rtt":28, "volume":1}}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libxvid", "parameters":{"preset":"fast"}, "filter":{"rtt":27, "adjust":true, "height":1080, "width":1920, "fps":29, "rotate":0}}}};
 
         check_options.video.transcode.filter.fps = parseInt(document.getElementById("transcode_fps").value, 10);
         check_options.video.transcode.filter.width = parseInt(document.getElementById("transcode_width").value, 10);
         check_options.video.transcode.filter.height = parseInt(document.getElementById("transcode_height").value, 10);
+        check_options.video.transcode.filter.rotate = parseInt(document.getElementById("transcode_rotate").value, 10);
+        if (document.getElementById("transcode_bgcolor").value != "none")
+            check_options.video.transcode.filter.background_color = document.getElementById("transcode_bgcolor").value;
+        if (document.getElementById("transcode_stabilize").checked)
+            check_options.video.transcode.filter.stabilize = true;
+
+        check_options.audio.transcode.filter.volume = parseInt(document.getElementById("transcode_volume").value, 10);
+        //*/       
+
+        // just remux
+        //var check_options = {"rtt":24, "container_extension":"mp4", "audio":{"rtt":25}, "video":{"rtt":25}};
+        // aac audio only
+        //var check_options = {"rtt":24, "container_extension":"aac", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac"}}};
+
+        //var check_options = {"rtt":24, "container_extension":"oga", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"libvorbis"}}};
+        
         
         transcode_request.open("PUT", Singleton.Dashboard().requestInfo.admin + "/library/" + Singleton.Dashboard().requestInfo.currentdir.join("/") + "/" + Singleton.Dashboard().filetocheck, true);
         transcode_request.send(JSON.stringify([check_options]));
@@ -1017,6 +1042,13 @@ std::string dashboard()
             <input type="number" id="transcode_width" value="640"> <label>width</label><br>
             <input type="number" id="transcode_height" value="480"> <label>height</label><br>
             <input type="number" id="transcode_fps" value=24> <label>fps</label><br>
+            <input type="number" id="transcode_rotate" value=0> <label>rotate</label><br>
+            <input type="text" id="transcode_bgcolor" value="none"> <label>background color</label><br>
+            <label class="switch">
+                stabilize video
+                <input type="checkbox" id="transcode_stabilize">
+            </label><br>
+            <input type="number" id="transcode_volume" value=1> <label>volume</label><br>
             
             <button onclick = "transcode()">transcode</button><br><br>
             

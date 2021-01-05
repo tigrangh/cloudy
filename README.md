@@ -63,7 +63,7 @@ This application is also embedded inside the server and can be accessed with the
 ### Add a file to media library
 Consider `/path/to/media/file.mp4` to be a local video file
 ```console
-user@pc:~$ curl -X PUT --data '[{"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "adjust":false, "height":1080, "width":1920, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "adjust":false, "height":720, "width":1280, "fps":29}}}}, {"rtt":24, "container_extension":"mp4", "muxer_opt_key":"", "muxer_opt_value":"", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac", "codec_priv_key":"", "codec_priv_value":""}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "codec_priv_key":"", "codec_priv_value":"", "filter":{"rtt":27, "adjust":true, "height":360, "width":640, "fps":29}}}}]' "127.0.0.1:4444/library/path/to/media/file.mp4"
+user@pc:~$ curl -X PUT --data '[{"rtt":24, "container_extension":"mp4", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac"}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "parameters":{"preset":"fast"}, "filter":{"rtt":27, "adjust":false, "height":1080, "width":1920, "fps":29, "rotate":0}}}}, {"rtt":24, "container_extension":"mp4", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac"}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "parameters":{"preset":"fast"}, "filter":{"rtt":27, "adjust":false, "height":720, "width":1280, "fps":29, "rotate":0}}}}, {"rtt":24, "container_extension":"mp4", "audio":{"rtt":25, "transcode":{"rtt":26, "codec":"aac"}}, "video":{"rtt":25, "transcode":{"rtt":26, "codec":"libx264", "parameters":{"preset":"fast"}, "filter":{"rtt":27, "adjust":true, "height":360, "width":640, "fps":29, "rotate":0}}}}]' "127.0.0.1:4444/library/path/to/media/file.mp4"
 {"rtt":7,"lib_files":[],"lib_directories":[],"fs_files":["file.mp4"],"fs_directories":[]}
 ```
 The response shows already existing files and folders in the library and in the fs (in the current directory), in this case nothing yet in the library.
@@ -85,7 +85,7 @@ With this we get the checksum of the file - sha256 hash
 And then
 ```console
 user@pc:~$ curl "127.0.0.1:4444/index/GvN8WbnpBtXe6GzJPbQtmanD6gxg7Bt8XHibwU7x546m"
-{"rtt":22,"paths":[["path","to","media","file.mp4"]],"type_definitions":[{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"","codec_priv_value":"","filter":{"rtt":27,"adjust":true,"height":360,"width":640,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54213,"uri":"ASCvRY6YCMsLAD2iPyMHPnnb9Lqjg1Zhq15o8JnxYSfM"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"","codec_priv_value":"","filter":{"rtt":27,"adjust":false,"height":1080,"width":1920,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54213,"uri":"2abSXktkdeFWBTpJGFXvxT6x5nuPn1MAX9xKD2GPQqv9"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac","codec_priv_key":"","codec_priv_value":""}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","codec_priv_key":"","codec_priv_value":"","filter":{"rtt":27,"adjust":false,"height":720,"width":1280,"fps":29}}},"muxer_opt_key":"","muxer_opt_value":"","container_extension":"mp4"},"sequence":{"rtt":19,"frames":[{"rtt":20,"count":54213,"uri":"C56jZnpinpaeS5KDGxtuBRRy3YxcbXx46eFpkgBC1XW4"}]}}]}
+{"rtt":22,"paths":[["path","to","media","file.mp4"]],"type_definitions":[{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac"}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","parameters":{"preset":"fast"},"filter":{"rtt":27,"adjust":true,"height":360,"width":640,"fps":29,"rotate":0.000000}}},"container_extension":"mp4"},"sequence":{"rtt":19,"done":true,"frames":[{"rtt":20,"count":54213,"uri":"ASCvRY6YCMsLAD2iPyMHPnnb9Lqjg1Zhq15o8JnxYSfM"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac"}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","parameters":{"preset":"fast"},"filter":{"rtt":27,"adjust":false,"height":1080,"width":1920,"fps":29,"rotate":0.000000}}},"container_extension":"mp4"},"sequence":{"rtt":19,"done":true,"frames":[{"rtt":20,"count":54213,"uri":"2abSXktkdeFWBTpJGFXvxT6x5nuPn1MAX9xKD2GPQqv9"}]}},{"rtt":21,"type_description":{"rtt":24,"audio":{"rtt":25,"transcode":{"rtt":26,"codec":"aac"}},"video":{"rtt":25,"transcode":{"rtt":26,"codec":"libx264","parameters":{"preset":"fast"},"filter":{"rtt":27,"adjust":false,"height":720,"width":1280,"fps":29,"rotate":0.000000}}},"container_extension":"mp4"},"sequence":{"rtt":19,"done":true,"frames":[{"rtt":20,"count":54213,"uri":"C56jZnpinpaeS5KDGxtuBRRy3YxcbXx46eFpkgBC1XW4"}]}}]}
 ```
 This shows that there are three transcoded versions of the original video file, details about the transcoding options and the "uri" of each transcoded file, which can be used to request the file from storage server. By the way, "count" shows the duration of the video in milliseconds.
 But just the uri is made to be not enough to get the file, we need to ask the admin interface to sign it, and get an authorization.
@@ -115,7 +115,7 @@ We can "upload" any file to cloudy. For example let's have `/path/to/index.html`
 
 Then
 ```console
-user@pc:~$ curl -X PUT --data '[{"rtt":28, "mime_type":"text/html"}]' "127.0.0.1:4444/library/path/to/index.html"
+user@pc:~$ curl -X PUT --data '[{"rtt":29, "mime_type":"text/html"}]' "127.0.0.1:4444/library/path/to/index.html"
 {"rtt":7,"lib_files":[],"lib_directories":[],"fs_files":["index.html"],"fs_directories":[]}
 ```
 
@@ -341,14 +341,13 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         }
     },
 
-    "MediaTypeDescriptionVideoContainer": {
+    "MediaTypeDescriptionAVContainer": {
         "type": "object",
         "rtt": 24,
         "properties": {
             "audio": { "type": "Optional MediaTypeDescriptionAVStream"},
             "video": { "type": "Optional MediaTypeDescriptionAVStream"},
-            "muxer_opt_key": { "type": "String"},
-            "muxer_opt_value": { "type": "String"},
+            "muxer_parameters": { "type": "Optional Hash"},
             "container_extension": { "type": "String"}
         }
     },
@@ -366,9 +365,8 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
         "rtt": 26,
         "properties": {
             "codec": { "type": "String"},
-            "codec_priv_key": { "type": "String"},
-            "codec_priv_value": { "type": "String"},
-            "filter": { "type": "Optional MediaTypeDescriptionVideoFilter"}
+            "parameters": { "type": "Optional Hash"},
+            "filter": { "type": "Optional Variant"}
         }
     },
 
@@ -379,17 +377,29 @@ user@pc:~$ curl 127.0.0.1:4444/protocol
             "adjust": { "type": "Bool"},
             "height": { "type": "UInt64"},
             "width": { "type": "UInt64"},
-            "fps": { "type": "UInt64"}
+            "fps": { "type": "UInt64"},
+            "rotate": { "type": "Float64"},
+            "background_color": { "type": "Optional String"},
+            "stabilize": { "type": "Optional Bool"}
+        }
+    },
+
+    "MediaTypeDescriptionAudioFilter": {
+        "type": "object",
+        "rtt": 28,
+        "properties": {
+            "volume": { "type": "Float64"}
         }
     },
 
     "MediaTypeDescriptionRaw": {
         "type": "object",
-        "rtt": 28,
+        "rtt": 29,
         "properties": {
             "mime_type": { "type": "String"}
         }
     }
 
 }
+
 ```

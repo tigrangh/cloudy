@@ -29,7 +29,7 @@ module AdminModel
     class LibraryPut
     {
         Array String path
-        Array Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
+        Array Variant AdminModel {MediaTypeDescriptionAVContainer MediaTypeDescriptionRaw} type_descriptions
     }
 
     class LibraryDelete
@@ -121,7 +121,7 @@ module AdminModel
 
     class MediaTypeDefinition
     {
-        Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_description
+        Variant AdminModel {MediaTypeDescriptionAVContainer MediaTypeDescriptionRaw} type_description
         MediaSequence sequence
     }
 
@@ -136,13 +136,13 @@ module AdminModel
         String message
     }
 
-    class MediaTypeDescriptionVideoContainer
+    class MediaTypeDescriptionAVContainer
     {
         Optional MediaTypeDescriptionAVStream audio
         Optional MediaTypeDescriptionAVStream video
 
-        String muxer_opt_key
-        String muxer_opt_value
+        Optional Hash String String muxer_parameters
+
         String container_extension
     }
 
@@ -154,9 +154,8 @@ module AdminModel
     class MediaTypeDescriptionAVStreamTranscode
     {
         String codec
-        String codec_priv_key
-        String codec_priv_value
-        Optional MediaTypeDescriptionVideoFilter filter
+        Optional Hash String String parameters
+        Optional Variant AdminModel {MediaTypeDescriptionVideoFilter MediaTypeDescriptionAudioFilter} filter
     }
 
     class MediaTypeDescriptionVideoFilter
@@ -165,8 +164,16 @@ module AdminModel
         UInt64 height
         UInt64 width
         UInt64 fps
+        Float64 rotate
+        Optional String background_color
+        Optional Bool stabilize
     }
-    //  MediaTypeDescriptionVideoContainer related stuff ends here
+
+    class MediaTypeDescriptionAudioFilter
+    {
+        Float64 volume
+    }
+    //  MediaTypeDescriptionAVContainer related stuff ends here
 
     class MediaTypeDescriptionRaw
     {

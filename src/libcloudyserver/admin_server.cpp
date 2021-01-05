@@ -44,7 +44,7 @@ template <typename>
 string mime_type();
 
 template <>
-string mime_type<AdminModel::MediaTypeDescriptionVideoContainer>()
+string mime_type<AdminModel::MediaTypeDescriptionAVContainer>()
 {
     return "video/mp4";
 }
@@ -143,8 +143,8 @@ public:
         {
             string str_mime_type;
             if (pending_data.type_description &&
-                (*pending_data.type_description)->type() == AdminModel::MediaTypeDescriptionVideoContainer::rtt)
-                str_mime_type = mime_type<AdminModel::MediaTypeDescriptionVideoContainer>();
+                (*pending_data.type_description)->type() == AdminModel::MediaTypeDescriptionAVContainer::rtt)
+                str_mime_type = mime_type<AdminModel::MediaTypeDescriptionAVContainer>();
             else if (pending_data.type_description &&
                      (*pending_data.type_description)->type() == AdminModel::MediaTypeDescriptionRaw::rtt)
             {

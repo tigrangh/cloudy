@@ -13,7 +13,7 @@ module InternalModel
     {
         String sha256sum
         Array String path
-        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionAVContainer MediaTypeDescriptionRaw} type_descriptions
     }
     class PendingForIndex
     {
@@ -30,7 +30,7 @@ module InternalModel
         Array String path
         String output_dir
 
-        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionAVContainer MediaTypeDescriptionRaw} type_descriptions
     }
 
     ///
@@ -39,20 +39,20 @@ module InternalModel
     class ProcessIndexRequest
     {
         Array String path
-        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionAVContainer MediaTypeDescriptionRaw} type_descriptions
     }
 
     class ProcessIndexResult
     {
         Array String path
         String sha256sum
-        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionAVContainer MediaTypeDescriptionRaw} type_descriptions
     }
 
     class ProcessIndexError
     {
         Array String path
-        Set Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_descriptions
+        Set Variant AdminModel {MediaTypeDescriptionAVContainer MediaTypeDescriptionRaw} type_descriptions
         String reason
     }
 
@@ -61,8 +61,8 @@ module InternalModel
         UInt64 accumulated
         UInt64 count
         Array String path
-        Optional Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_description
-        Optional Variant AdminModel {MediaTypeDescriptionVideoContainer MediaTypeDescriptionRaw} type_description_refined
+        Optional Variant AdminModel {MediaTypeDescriptionAVContainer MediaTypeDescriptionRaw} type_description
+        Optional Variant AdminModel {MediaTypeDescriptionAVContainer MediaTypeDescriptionRaw} type_description_refined
         String data_or_file
         ResultType result_type
     }

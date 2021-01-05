@@ -17,6 +17,7 @@ extern "C"
 #include <libavformat/avformat.h>
 #include <libavutil/timestamp.h>
 #include <libavutil/opt.h>
+#include <libavutil/display.h>
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
@@ -28,6 +29,7 @@ extern "C"
 }
 
 #include <cassert>
+#include <cmath>
 
 using std::string;
 using beltpp::packet;
@@ -186,6 +188,64 @@ stream_ptr format_new_stream(format_context_ptr& fc)
     return res;
 }
 
+struct rotation_angle
+{
+    size_t whole;
+    size_t fraction;
+    static size_t const fractions_in_whole = 100;
+    double const pi = 3.14159265;
+
+    bool operator == (size_t theta) const
+    {
+        return fraction == 0 && whole == theta;
+    }
+    bool operator != (size_t theta) const
+    {
+        return false == (operator == (theta));
+    }
+
+    string to_string() const
+    {
+        return std::to_string(whole) + "." + std::to_string(fraction);
+    }
+
+    double sin() const
+    {
+        return std::sin((whole + fraction / double(fractions_in_whole)) * pi / 180);
+    }
+
+    double cos() const
+    {
+        return std::cos((whole + fraction / double(fractions_in_whole)) * pi / 180);
+    }
+};
+
+rotation_angle get_rotation(AVStream* st, double rotate)
+{
+    uint8_t* displaymatrix = av_stream_get_side_data(st,
+                                                     AV_PKT_DATA_DISPLAYMATRIX,
+                                                     nullptr);
+    double theta = 0;
+    if (displaymatrix)
+        theta = -av_display_rotation_get(reinterpret_cast<int32_t*>(displaymatrix));
+
+    //theta -= 360 * floor(theta / 360 + 0.9 / 360);
+    theta += rotate;
+    theta -= 360 * floor(theta / 360);
+
+    rotation_angle angle;
+    angle.whole = floor(theta);
+    angle.fraction = floor((theta - angle.whole) * rotation_angle::fractions_in_whole);
+
+    // if (fabs(theta - 90 * round(theta / 90)) > 2)
+    //     av_log(NULL, AV_LOG_WARNING, "Odd rotation angle.\n"
+    //         "If you want to help, upload a sample "
+    //         "of this file to ftp://upload.ffmpeg.org/incoming/ "
+    //         "and contact the ffmpeg-devel mailing list. (ffmpeg-devel@ffmpeg.org)");
+
+    return angle;
+}
+
 class CodecContextDefinition
 {
 public:
@@ -304,6 +364,10 @@ public:
     {
         skip = false;
 
+        if (options.parameters)
+        for (auto const& item : *options.parameters)
+            av_opt_set(avcodec_context->priv_data, item.first.c_str(), item.second.c_str(), 0);
+
         if (decoder.avmedia_type == AVMEDIA_TYPE_AUDIO)
         {
             /*
@@ -355,13 +419,6 @@ public:
         }
         else if (decoder.avmedia_type == AVMEDIA_TYPE_VIDEO)
         {
-            av_opt_set(avcodec_context->priv_data, "preset", "fast", 0);
-            if (false == options.codec_priv_key.empty() &&
-                false == options.codec_priv_value.empty())
-                av_opt_set(avcodec_context->priv_data,
-                           options.codec_priv_key.c_str(),
-                           options.codec_priv_value.c_str(), 0);
-
             avcodec_context->sample_aspect_ratio = decoder.avcodec_context->sample_aspect_ratio;
             if (avcodec->pix_fmts)
                 avcodec_context->pix_fmt = avcodec->pix_fmts[0];
@@ -404,7 +461,8 @@ public:
             }
             */
 
-            if (!options.filter)
+            if (!options.filter ||
+                (*options.filter)->type() != AdminModel::MediaTypeDescriptionVideoFilter::rtt)
             {
                 avcodec_context->height = decoder.avcodec_context->height;
                 avcodec_context->width = decoder.avcodec_context->width;
@@ -412,57 +470,68 @@ public:
             }
             else
             {
-                double height_ratio = double(options.filter->height) / decoder.avcodec_context->height;
-                double width_ratio = double(options.filter->width) / decoder.avcodec_context->width;
+                AdminModel::MediaTypeDescriptionVideoFilter* filter;
+                (*options.filter)->get(filter);
+
+                double const decoder_input_height = decoder.avcodec_context->height;
+                double const decoder_input_width = decoder.avcodec_context->width;
+
+                rotation_angle angle = get_rotation(decoder.avstream.get(), filter->rotate);
+
+                double const input_height = fabs(decoder_input_width * angle.sin()) + fabs(decoder_input_height * angle.cos());
+                double const input_width = fabs(decoder_input_width * angle.cos()) + fabs(decoder_input_height * angle.sin());
+                
+                double height_ratio = double(filter->height) / input_height;
+                double width_ratio = double(filter->width) / input_width;
 
                 if (height_ratio >= width_ratio &&
                     width_ratio <= 1)
                 {
-                    avcodec_context->height = decoder.avcodec_context->height * width_ratio;
-                    avcodec_context->width = options.filter->width;
+                    avcodec_context->height = input_height * width_ratio;
+                    avcodec_context->width = filter->width;
                 }
                 else if (height_ratio <= width_ratio &&
                          height_ratio <= 1)
                 {
-                    avcodec_context->height = options.filter->height;
-                    avcodec_context->width = decoder.avcodec_context->width * height_ratio;
+                    avcodec_context->height = filter->height;
+                    avcodec_context->width = input_width * height_ratio;
                 }
                 else
                 {
-                    avcodec_context->height = decoder.avcodec_context->height;
-                    avcodec_context->width = decoder.avcodec_context->width;
-                    // skip = true;
-                    // return;
+                    avcodec_context->height = input_height;
+                    avcodec_context->width = input_width;
                 }
                 if (0 != avcodec_context->height % 2)
                     --avcodec_context->height;
                 if (0 != avcodec_context->width % 2)
                     --avcodec_context->width;
 
-                if (int(options.filter->fps) > input_framerate.num / input_framerate.den + 1)
+                int ratio = input_framerate.num / input_framerate.den +
+                                          (0 == input_framerate.num % input_framerate.den ? 0 : 1);
+
+                if (int(filter->fps) > ratio)
                 {
-                    if (false == options.filter->adjust)
+                    if (false == filter->adjust)
                     {
                         skip = true;
                         return;
                     }
-                    options.filter->fps = input_framerate.num / input_framerate.den +
-                                          (0 == input_framerate.num % input_framerate.den ? 0 : 1);
+                    filter->fps = ratio;
                 }
-                avcodec_context->framerate = {int(options.filter->fps), 1};
+                avcodec_context->framerate = {int(filter->fps), 1};
 
-                if (false == options.filter->adjust &&
+                if (false == filter->adjust &&
                     (
-                        int(options.filter->height) != avcodec_context->height ||
-                        int(options.filter->width) != avcodec_context->width
+                        int(filter->height) != avcodec_context->height ||
+                        int(filter->width) != avcodec_context->width
                     ))
                 {
                     skip = true;
                     return;
                 }
 
-                options.filter->height = avcodec_context->height;
-                options.filter->width = avcodec_context->width;
+                filter->height = avcodec_context->height;
+                filter->width = avcodec_context->width;
             }
 
             avcodec_context->time_base = av_inv_q(avcodec_context->framerate);
@@ -493,9 +562,17 @@ public:
             if (options.filter &&
                 avmedia_type == AVMEDIA_TYPE_VIDEO)
             {
+                AdminModel::MediaTypeDescriptionVideoFilter const* filter = nullptr;
+                if (options.filter &&
+                    (*options.filter)->type() == AdminModel::MediaTypeDescriptionVideoFilter::rtt)
+                    (*options.filter)->get(filter);
+
                 AVFilterContext* buffer_context = nullptr;
-                AVFilterContext* framerate_context = nullptr;
+                AVFilterContext* rotate1_context = nullptr;
+                AVFilterContext* rotate2_context = nullptr;
+                AVFilterContext* deshake_context = nullptr;
                 AVFilterContext* scale_context = nullptr;
+                AVFilterContext* framerate_context = nullptr;
 
                 {
                     string buffer_name = "buffer_" + std::to_string(index);
@@ -526,22 +603,99 @@ public:
                         return false;
                 }
 
-                if (options.filter)
                 {
-                    string framerate_arguments = "fps=" + std::to_string(avcodec_context->framerate.num) +
-                                                 "/" + std::to_string(avcodec_context->framerate.den);
-                    string framerate_name = "fps_" + std::to_string(index);
+                    rotation_angle angle = get_rotation(decoder.avstream.get(), filter->rotate);
 
-                    if (0 > avfilter_graph_create_filter(&framerate_context,
-                                                         avfilter_get_by_name("fps"),
-                                                         framerate_name.c_str(),
-                                                         framerate_arguments.c_str(),
+                    if (angle == 90)
+                    {
+                        string transpose_name = "transpose_" + std::to_string(index);
+                        string transpose_arguments = "clock";
+
+                        if (0 > avfilter_graph_create_filter(&rotate1_context,
+                                                             avfilter_get_by_name("transpose"),
+                                                             transpose_name.c_str(),
+                                                             transpose_arguments.c_str(),
+                                                             nullptr,
+                                                             filter_graph.get()))
+                            return false;
+                    }
+                    else if (angle == 180)
+                    {
+                        string hflip_name = "hflip_" + std::to_string(index);
+
+                        if (0 > avfilter_graph_create_filter(&rotate1_context,
+                                                             avfilter_get_by_name("hflip"),
+                                                             hflip_name.c_str(),
+                                                             nullptr,
+                                                             nullptr,
+                                                             filter_graph.get()))
+                            return false;
+
+                        string vflip_name = "vflip_" + std::to_string(index);
+
+                        if (0 > avfilter_graph_create_filter(&rotate2_context,
+                                                             avfilter_get_by_name("vflip"),
+                                                             vflip_name.c_str(),
+                                                             nullptr,
+                                                             nullptr,
+                                                             filter_graph.get()))
+                            return false;
+                    }
+                    else if (angle == 270)
+                    {
+                        string transpose_name = "transpose_" + std::to_string(index);
+                        string transpose_arguments = "cclock";
+
+                        if (0 > avfilter_graph_create_filter(&rotate1_context,
+                                                             avfilter_get_by_name("transpose"),
+                                                             transpose_name.c_str(),
+                                                             transpose_arguments.c_str(),
+                                                             nullptr,
+                                                             filter_graph.get()))
+                            return false;
+                    }
+                    else
+                    {
+                        // fillcolor details
+                        // https://ffmpeg.org/ffmpeg-utils.html#Color
+                        // rotate details
+                        // http://ffmpeg.org/ffmpeg-filters.html#rotate
+
+                        string fillcolor = "none";
+                        if (filter->background_color)
+                            fillcolor = *filter->background_color;
+                        string radians = angle.to_string() + "*PI/180";
+                        string rotate_name = "rotate_" + std::to_string(index);
+                        string rotate_arguments = "angle=" + radians + " : "
+                                                  "fillcolor=" + fillcolor + " : " // none, 0x000000, black or white ...
+                                                  "ow=rotw(" + radians + ") : "
+                                                  "oh=roth(" + radians + ")";
+
+                        if (0 > avfilter_graph_create_filter(&rotate1_context,
+                                                             avfilter_get_by_name("rotate"),
+                                                             rotate_name.c_str(),
+                                                             rotate_arguments.c_str(),
+                                                             nullptr,
+                                                             filter_graph.get()))
+                            return false;
+                    }
+                }
+
+                if (filter && filter->stabilize && *filter->stabilize)
+                {
+                    string deshake_name = "deshake_" + std::to_string(index);
+                    string deshake_arguments;
+
+                    if (0 > avfilter_graph_create_filter(&deshake_context,
+                                                         avfilter_get_by_name("deshake"),
+                                                         deshake_name.c_str(),
+                                                         deshake_arguments.c_str(),
                                                          nullptr,
                                                          filter_graph.get()))
                         return false;
                 }
 
-                if (options.filter)
+                if (filter)
                 {
                     string scale_name = "scale_" + std::to_string(index);
                     string scale_arguments = std::to_string(avcodec_context->width) + ":" +
@@ -552,6 +706,21 @@ public:
                                                          avfilter_get_by_name("scale"),
                                                          scale_name.c_str(),
                                                          scale_arguments.c_str(),
+                                                         nullptr,
+                                                         filter_graph.get()))
+                        return false;
+                }
+
+                if (filter)
+                {
+                    string framerate_arguments = "fps=" + std::to_string(avcodec_context->framerate.num) +
+                                                 "/" + std::to_string(avcodec_context->framerate.den);
+                    string framerate_name = "fps_" + std::to_string(index);
+
+                    if (0 > avfilter_graph_create_filter(&framerate_context,
+                                                         avfilter_get_by_name("fps"),
+                                                         framerate_name.c_str(),
+                                                         framerate_arguments.c_str(),
                                                          nullptr,
                                                          filter_graph.get()))
                         return false;
@@ -580,6 +749,36 @@ public:
                     if (nullptr == filter_context_source)
                         filter_context_source = current;
                 }
+                if (rotate1_context)
+                {
+                    if (current &&
+                        0 > avfilter_link(current, 0, rotate1_context, 0))
+                            return false;
+
+                    current = rotate1_context;
+                    // if (nullptr == filter_context_source)
+                    //     filter_context_source = current;
+                }
+                if (rotate2_context)
+                {
+                    if (current &&
+                        0 > avfilter_link(current, 0, rotate2_context, 0))
+                            return false;
+
+                    current = rotate2_context;
+                    // if (nullptr == filter_context_source)
+                    //     filter_context_source = current;
+                }
+                if (deshake_context)
+                {
+                    if (current &&
+                        0 > avfilter_link(current, 0, deshake_context, 0))
+                            return false;
+
+                    current = deshake_context;
+                    // if (nullptr == filter_context_source)
+                    //     filter_context_source = current;
+                }
                 if (scale_context)
                 {
                     if (current &&
@@ -587,8 +786,8 @@ public:
                             return false;
 
                     current = scale_context;
-                    if (nullptr == filter_context_source)
-                        filter_context_source = current;
+                    // if (nullptr == filter_context_source)
+                    //     filter_context_source = current;
                 }
                 if (framerate_context)
                 {
@@ -597,8 +796,8 @@ public:
                             return false;
 
                     current = framerate_context;
-                    if (nullptr == filter_context_source)
-                        filter_context_source = current;
+                    // if (nullptr == filter_context_source)
+                    //     filter_context_source = current;
                 }
                 //if (filter_context_sink)
                 {
@@ -607,8 +806,8 @@ public:
                             return false;
 
                     current = filter_context_sink;
-                    if (nullptr == filter_context_source)
-                        filter_context_source = current;
+                    // if (nullptr == filter_context_source)
+                    //     filter_context_source = current;
                 }
 
                 if (0 > avfilter_graph_config(filter_graph.get(), nullptr))
@@ -616,8 +815,14 @@ public:
             }
             else if (avmedia_type == AVMEDIA_TYPE_AUDIO)
             {
+                AdminModel::MediaTypeDescriptionAudioFilter const* filter = nullptr;
+                if (options.filter &&
+                    (*options.filter)->type() == AdminModel::MediaTypeDescriptionAudioFilter::rtt)
+                    (*options.filter)->get(filter);
+
                 AVFilterContext* buffer_context = nullptr;
                 AVFilterContext* format_context = nullptr;
+                AVFilterContext* volume_context = nullptr;
 
                 {
                     string buffer_name = "in_" + std::to_string(index);
@@ -711,6 +916,20 @@ public:
                         return false;
                 }
 
+                if (filter)
+                {
+                    string volume_arguments = "volume=" + std::to_string(filter->volume);
+                    string volume_name = "volume_" + std::to_string(index);
+
+                    if (0 > avfilter_graph_create_filter(&volume_context,
+                                                         avfilter_get_by_name("volume"),
+                                                         volume_name.c_str(),
+                                                         volume_arguments.c_str(),
+                                                         nullptr,
+                                                         filter_graph.get()))
+                        return false;
+                }
+
                 {
                     string sink_name = "sink_" + std::to_string(index);
 
@@ -740,8 +959,18 @@ public:
                             return false;
 
                     current = format_context;
-                    if (nullptr == filter_context_source)
-                        filter_context_source = current;
+                    // if (nullptr == filter_context_source)
+                    //     filter_context_source = current;
+                }
+                if (volume_context)
+                {
+                    if (current &&
+                        0 > avfilter_link(current, 0, volume_context, 0))
+                            return false;
+
+                    current = volume_context;
+                    // if (nullptr == filter_context_source)
+                    //     filter_context_source = current;
                 }
                 //if (filter_context_sink)
                 {
@@ -750,8 +979,8 @@ public:
                             return false;
 
                     current = filter_context_sink;
-                    if (nullptr == filter_context_source)
-                        filter_context_source = current;
+                    // if (nullptr == filter_context_source)
+                    //     filter_context_source = current;
                 }
 
                 if (!(avcodec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE))
@@ -1103,12 +1332,12 @@ bool EncoderContext::load(size_t option_index_,
                           DecoderContext& decoder_context,
                           filesystem::path const& output_dir)
 {
-    if (options->type() != AdminModel::MediaTypeDescriptionVideoContainer::rtt)
+    if (options->type() != AdminModel::MediaTypeDescriptionAVContainer::rtt)
         return true;
 
     option_index = option_index_;
 
-    AdminModel::MediaTypeDescriptionVideoContainer* container_options;
+    AdminModel::MediaTypeDescriptionAVContainer* container_options;
     options->get(container_options);
 
     filepath = (output_dir / (std::to_string(option_index_) + "." + container_options->container_extension)).string();
@@ -1179,12 +1408,17 @@ bool EncoderContext::load(size_t option_index_,
         }
     }
 
-    if (false == container_options->muxer_opt_key.empty() &&
-        false == container_options->muxer_opt_value.empty())
+    if (container_options->muxer_parameters)
+    for (auto const& item : *container_options->muxer_parameters)
+    {
+        if (item.first.empty() || item.second.empty())
+            continue;
+
         av_dict_set(&muxer_opts,
-                    container_options->muxer_opt_key.c_str(),
-                    container_options->muxer_opt_value.c_str(),
+                    item.first.c_str(),
+                    item.second.c_str(),
                     0);
+    }
 
     if (0 > avformat_write_header(avformat_context.get(),
                                   &muxer_opts))

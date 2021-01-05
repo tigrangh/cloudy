@@ -34,7 +34,7 @@ bool less(optional<T> const& first, optional<T> const& second);
 
 namespace AdminModel
 {
-using MediaTypeDescriptionVariant = variant_type<MediaTypeDescriptionVideoContainer::rtt, MediaTypeDescriptionRaw::rtt>;
+using MediaTypeDescriptionVariant = variant_type<MediaTypeDescriptionAVContainer::rtt, MediaTypeDescriptionRaw::rtt>;
 }
 
 namespace AdminModel
